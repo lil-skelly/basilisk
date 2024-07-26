@@ -5,7 +5,7 @@
 #include <linux/kallsyms.h>
 #include <linux/version.h>
 
-#include "ftrace_helper_new.h"
+#include "ftrace_helper.h"
 #include "stealth_helper.h"
 
 MODULE_LICENSE("GPL");
