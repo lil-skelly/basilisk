@@ -47,16 +47,16 @@ static void cleanup_new_fops(void) {
 static ssize_t hook_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 {
     int read_len; 
-    if (*pos == 0 && count >= KING_LEN) { // Simulate a read call and return our king name
+    if (*pos == 0 && count >= KING_LEN) { // If pos at start of file, *read* our KING name
         read_len = KING_LEN;
-	if (copy_to_user(buf, KING, read_len)) {
-	    pr_alert("basilisk: copy_to_user failed\n");
-	    return -EFAULT;
+        if (copy_to_user(buf, KING, read_len)) {
+            pr_alert("basilisk: copy_to_user failed\n");
+            return -EFAULT;
         }
-	*pos += read_len; 
+	    *pos += read_len; // Use the file offset to handle subsequent reads 
         return read_len;
     } else {
-	return 0; // Return EOF, read_len = 0; 
+	    return 0; // Return EOF
     }
 }
 
