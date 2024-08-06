@@ -1,0 +1,2 @@
+scp skelly@IP:/home/skelly/projects/basilisk/compiled/FILE basilisk.ko 
+

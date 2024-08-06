@@ -37,6 +37,7 @@ func main() {
 func returnKing(w http.ResponseWriter, r *http.Request) {
     w.Write(readKing()) // Writes the results of readKing() to the web page
 }
+
 func readKing() []byte{
 	buff, err := ioutil.ReadFile(kingFilePath) // Read the file /root/king.txt
 	if err != nil { // Error handling
@@ -57,7 +58,7 @@ func simulateKingReadWeb() {
             body, _ := ioutil.ReadAll(resp.Body) // Read the response body
             resp.Body.Close()                    // Close the response body
 
-            fmt.Printf("[%s] Current king => %s", currentTime.Format("15:04:05"), body)
+            fmt.Printf("[%s] Current king => %s\n", currentTime.Format("15:04:05"), body)
         }
         time.Sleep(interval)
     }
