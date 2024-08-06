@@ -13,10 +13,30 @@ echo "=> Vagrant Box is up and running"
 cd "$CWD" || { echo "Failed to return to the original directory. Exiting."; exit 1; }
 
 echo "-> Uploading source code to VM"
-scp -P 2222 -r "/home/skelly/projects/basilisk/src" "vagrant@127.0.0.1:src"
+scp -P 2222 -r "/home/skelly/projects/basilisk/src" "vagrant@127.0.0.1:basilisk"
 if [ "$?" -eq 0 ]; then
-    echo "==> Uploading complete. Happy Hacking X) <=="
+    echo "==> Uploading complete <=="
 else
     echo "Error: Failed to upload source code."
+    exit 1
+fi
+
+echo "-> Compiling source code in Vagrant box"
+ssh -p 2222 vagrant@127.0.0.1 << 'EOF'
+    cd /home/vagrant/basilisk/src || { echo "Failed to change directory to src. Exiting."; exit 1; }
+    echo "Running make..."
+    make
+    if [ "$?" -ne 0 ]; then
+        echo "Error: Compilation failed."
+        exit 1
+    fi
+EOF
+
+# Check if SSH command was successful
+if [ "$?" -eq 0 ]; then
+    echo "==> Compilation completed successfully <=="
+    echo "Happy Hacking X)"
+else
+    echo "Error: SSH command failed."
     exit 1
 fi

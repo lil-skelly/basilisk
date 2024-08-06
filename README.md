@@ -22,8 +22,16 @@ You can customize the LKM by modifying the following macros:
 
 #define KING "SKELLY\n" // King
 ```
+
 The signals used for hiding/showing the module and for the root backdoor are common amongst rootkits. 
 I highly advice you change them to something less predictable from the range 32-64 (unused signals/process specific)
+
+| SIGNAL        | VALUE | FUNCTION CALL                       | DESCRIPTION                                        |
+|-------------|-------|-------------------------------------|----------------------------------------------------|
+| SIG_HIDE    | 63    | handle_lkm_hide                     | hide/show from sysfs, procfs                       |
+| SIG_PROTECT | 32    | handle_lkm_protect                  | increase/decrease the module ref count             |
+| SIG_GODMODE | 38    | handle_lkm_hide, handle_lkm_protect | combines functionality of SIG_HIDE and SIG_PROTECT |
+| SIG_ROOT    | 64    | set_root                            | give root to the calling process                   |
 
 ## Protecting the King
 At first glance, the goal of a KoTH game is to root the machine and place your username inside the king file (`/root/king.txt`).
