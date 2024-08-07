@@ -1,13 +1,17 @@
 #!/usr/bin/bash 
+
+CWD=$(pwd)
+
 cd /home/skelly/vagrant_boxes/ubuntu18/ || { echo "Failed to change directory. Exiting."; exit 1; }
 
 # Check the status of the Vagrant box
 VAGRANT_STATUS=$(vagrant status | grep 'default' | awk '{print $2}')
 if [ "$VAGRANT_STATUS" != "running" ]; then
-    echo "Error: Vagrant box is not running. Please start the Vagrant box and try again."
-    exit 1
+    echo "Error: Vagrant box is not running. Attempting to start it . . ."
+    vagrant up
+else
+    echo "=> Vagrant Box is up and running"
 fi
-echo "=> Vagrant Box is up and running"
 
 # Return to the original directory
 cd "$CWD" || { echo "Failed to return to the original directory. Exiting."; exit 1; }
