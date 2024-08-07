@@ -207,6 +207,7 @@ static asmlinkage long hook_openat(const struct pt_regs *regs)
 
     error = handle_fops_poisoning(fd, full_path);
     if (error == fd) { // fops poisoning succeeded 
+        kfree(resolved_path);
         return fd;
     }
     kfree(resolved_path);
@@ -245,8 +246,10 @@ static asmlinkage long hook_openat(int dfd, const char __user *filename, int fla
 
     error = handle_fops_poisoning(fd, full_path);
     if (error == fd) { // fops poisoning succeeded 
+        kfree(resolved_path);
         return fd;
     }
+    kfree(resolved_path);
     return orig_openat(dfd, filename, flags, mode);
 }
 #endif
