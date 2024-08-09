@@ -12,25 +12,25 @@ static void cleanup_fops(struct file_operations *fops) {
 }
 
 /* Checks if path matches target */
-short is_bad_path(const char *full_path, const char *target, size_t n) {
+bool is_bad_path(const char *full_path, const char *target, size_t n) {
     size_t fp_len;
     size_t t_len;
     if (!full_path || !target) {
-        return 1; // pointer is NULL
+        return true; // pointer is NULL
     }
     // simple bounds checking
     fp_len = strlen(full_path);
     t_len = strlen(target);
 
     if (n > fp_len || n > t_len) {
-        return 1;
+        return true;
     }
 
     return strncmp(full_path, target, n) != 0;
 }
 
 /* Checks if file descriptor (fd) is standard (STDOUT, STDERR, STDIN)*/
-short is_bad_fd(const int fd) {
+bool is_bad_fd(const int fd) {
     return fd < 3;
 }
 

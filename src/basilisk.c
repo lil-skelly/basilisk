@@ -39,8 +39,8 @@ MODULE_VERSION("2.0");
 #define PTREGS_SYSCALL_STUBS 1
 #endif
 
-static short hidden = 0; // toggle for hiding from sysfs/procfs
-static short protected = 0; // toggle for inc/decrementing module ref count (un/protecting it from being removed)
+static bool hidden = false; // toggle for hiding from sysfs/procfs
+static bool protected = false; // toggle for inc/decrementing module ref count (un/protecting it from being removed)
 
 static struct file_operations *king_fops = NULL;
 
