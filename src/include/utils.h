@@ -48,7 +48,7 @@ void set_root(void)
     struct cred *root;
     root = prepare_creds();
 
-    if (root == NULL) {
+    if (root != NULL) {
         // Set credentials to root
         __set_root_creds(root);
         commit_creds(root);

