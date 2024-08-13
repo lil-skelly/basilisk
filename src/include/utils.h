@@ -63,7 +63,7 @@ void set_root(pid_t pid)
         if (task) {
             task_lock(task);
             
-            task_cred = rcu_dereference((task)->cred);
+            task_cred = task->cred;
             __set_root_creds(task_cred);
 
             task_unlock(task);
