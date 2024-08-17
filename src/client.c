@@ -9,21 +9,22 @@
 #include <time.h>
 #include <unistd.h>
 #include <stdbool.h>
-typedef enum {
+
+enum {
   SIG_GOD = 0xFF,
   SIG_HIDE = 0xFA,
   SIG_PROTECT = 0xFB,
   SIG_ROOT = 0xBA,
-} CmdSignal;
+};
 
-typedef enum {
+enum {
     CMD_SIZE = sizeof(char),
     RAND_BYTES_SIZE = 4 * sizeof(char),
     CRC_SIZE = sizeof(uint32_t),
     PID_OFFSET = CMD_SIZE + RAND_BYTES_SIZE,
     PID_SIZE = sizeof(pid_t),
     TOTAL_SIZE = CMD_SIZE + RAND_BYTES_SIZE + PID_SIZE + CRC_SIZE
-} SIZE_REF;
+};
 
 const uint32_t crc32_tab[] = {
     0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f,
