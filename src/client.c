@@ -103,27 +103,20 @@ void append_crc(char *buffer, size_t size) {
   memcpy(buffer + size, &crc, CRC_SIZE);
 }
 
-void print_buf(const char buffer[], size_t size) {
-  printf("=> Command: ");
-  for (size_t i = 0; i < size; i++) {
-    printf("%02X", (unsigned char)buffer[i]);
-  }
-  printf("\n");
-}
-
-// Translate cmd using CmdSignal enum and store the value to *ptr
-void get_cmd(const char *cmd, uint8_t *sig) {
-  size_t cmd_size = strlen(cmd);
-  if (strncmp(cmd, "root", cmd_size) == 0) {
+// Translate buf using signals enum and store the value to *sig
+void get_cmd(const char *buf, uint8_t *sig) {
+  size_t buf_size = strlen(buf);
+  if (strncmp(buf, "root", buf_size) == 0) {
     *sig = SIG_ROOT;
-  } else if (strncmp(cmd, "god", cmd_size) == 0) {
+  } else if (strncmp(buf, "god", buf_size) == 0) {
     *sig = SIG_GOD;
-  } else if (strncmp(cmd, "protect", cmd_size) == 0) {
+  } else if (strncmp(buf, "protect", buf_size) == 0) {
     *sig = SIG_PROTECT;
-  } else if (strncmp(cmd, "hide", cmd_size) == 0) {
+  } else if (strncmp(buf, "hide", buf_size) == 0) {
     *sig = SIG_HIDE;
   } else {
-    fprintf(stderr, "%s is not a valid command", cmd);
+    fprintf(stderr, "%s is not a valid command", buf);
+    exit(1);
   }
 }
 
@@ -148,6 +141,14 @@ void finalize_buffer(char buf[1024], const uint8_t cmd, const pid_t pid) {
   append_rand_bytes(buf + 1, RAND_BYTES_SIZE);
   append_pid(buf, pid, PID_OFFSET);
   append_crc(buf, TOTAL_SIZE - CRC_SIZE);
+}
+
+void print_buf(const char buffer[], size_t size) {
+  printf("=> Command: ");
+  for (size_t i = 0; i < size; i++) {
+    printf("%02X ", (unsigned char)buffer[i]);
+  }
+  printf("\n");
 }
 
 int main(int argc, char *argv[]) {
