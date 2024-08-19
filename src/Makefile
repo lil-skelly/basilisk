@@ -1,5 +1,5 @@
-obj-m += basilisk.o
-
+obj-m := basilisk.o
+basilisk-objs := main.o utils.o crc32.o
 all:
 	make -C /lib/modules/$(shell uname -r)/build M=$(shell pwd) modules
 	gcc -o client client.c

