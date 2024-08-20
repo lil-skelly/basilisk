@@ -39,7 +39,7 @@ If no PID is provided, the rootkit elevates the privileges of the client's paren
 
 You can customize the LKM by modifying the following:
 ```c
-/* in basilisk.c */
+/* in include/king.h */
 
 #define KING_FILENAME "/root/king.txt" // Path to king file
 
@@ -47,6 +47,7 @@ You can customize the LKM by modifying the following:
 ```
 Command signals can also be adjusted:
 ```c
+/* in include/main.h */
 enum {
   SIG_GOD = 0xFF,
   SIG_HIDE = 0xFA,
