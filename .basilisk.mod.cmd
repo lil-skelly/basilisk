@@ -1,1 +1,0 @@
-savedcmd_/home/skelly/projects/basilisk/basilisk.mod := printf '%s\n'   src/main.o src/utils.o src/crc32.o src/king.o src/stealth_helper.o src/ftrace_helper.o src/comms.o | awk '!x[$$0]++ { print("/home/skelly/projects/basilisk/"$$0) }' > /home/skelly/projects/basilisk/basilisk.mod

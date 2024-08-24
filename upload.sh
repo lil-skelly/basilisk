@@ -10,7 +10,7 @@ readonly BLUE='\033[0;34m'
 readonly NC='\033[0m' # No Color
 
 # Define constants
-TARGET_DIR="/home/skelly/vagrant_boxes/ubuntu18/"
+TARGET_DIR="/home/skelly/vms/ubuntu_bionic_18.04/"
 SOURCE_DIR="/home/skelly/projects/basilisk/src"
 REMOTE_USER="vagrant"
 REMOTE_HOST="127.0.0.1"
