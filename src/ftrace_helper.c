@@ -1,7 +1,6 @@
 #include "include/ftrace_helper.h"
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 7, 0)
-static unsigned long lookup_name(const char *name) {
+unsigned long fh_kprobe_lookup_name(const char *name) {
   struct kprobe kp = {.symbol_name = name};
   unsigned long retval;
 
@@ -10,6 +9,11 @@ static unsigned long lookup_name(const char *name) {
   retval = (unsigned long)kp.addr;
   unregister_kprobe(&kp);
   return retval;
+}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 7, 0)
+static unsigned long lookup_name(const char *name) {
+  return fh_kprobe_lookup_name(name);
 }
 #else
 static unsigned long lookup_name(const char *name) {

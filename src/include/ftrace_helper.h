@@ -64,6 +64,7 @@ struct ftrace_hook {
   unsigned long address;
   struct ftrace_ops ops;
 };
+unsigned long fh_kprobe_lookup_name(const char *name);
 
 int fh_install_hook(struct ftrace_hook *hook);
 void fh_remove_hook(struct ftrace_hook *hook);
