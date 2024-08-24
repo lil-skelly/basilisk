@@ -32,7 +32,7 @@ extern rwlock_t king_fops_lock;
 /* Declarations for openat hook */
 #ifdef PTREGS_SYSCALL_STUBS
 extern asmlinkage long (*orig_openat)(const struct pt_regs *);
-extern asmlinkage long hook_openat(const struct pt_regs *regs);
+asmlinkage long hook_openat(const struct pt_regs *regs);
 #else
 extern asmlinkage long (*orig_openat)(
   int dfd, 
@@ -40,7 +40,7 @@ extern asmlinkage long (*orig_openat)(
   int flags, umode_t mode
 );
 
-extern asmlinkage long hook_openat(
+asmlinkage long hook_openat(
   int dfd, 
   const char __user *filename,
   int flags, 

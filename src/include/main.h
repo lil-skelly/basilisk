@@ -59,7 +59,7 @@ extern asmlinkage ssize_t (*orig_seq_read)(
     size_t size, 
     loff_t *ppos
 );
-extern asmlinkage ssize_t hook_seq_read(
+asmlinkage ssize_t hook_seq_read(
     struct file *file, 
     char __user *buf,
     size_t size, 
