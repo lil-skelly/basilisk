@@ -8,27 +8,27 @@
 #include <linux/ftrace.h>
 #include <linux/kallsyms.h>
 #include <linux/kernel.h>
+#include <linux/kprobes.h>
 #include <linux/linkage.h>
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
-#include <linux/kprobes.h>
 
 #if defined(CONFIG_X86_64) && (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0))
 #define PTREGS_SYSCALL_STUBS 1
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5,11,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
 #define FTRACE_OPS_FL_RECURSION FTRACE_OPS_FL_RECURSION_SAFE
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5,11,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
 #define ftrace_regs pt_regs
 
-static __always_inline struct pt_regs *ftrace_get_regs(struct ftrace_regs *fregs)
-{
-	return fregs;
+static __always_inline struct pt_regs *
+ftrace_get_regs(struct ftrace_regs *fregs) {
+  return fregs;
 }
 #endif
 
@@ -57,12 +57,12 @@ static __always_inline struct pt_regs *ftrace_get_regs(struct ftrace_regs *fregs
  * Other fields are considered implementation details.
  */
 struct ftrace_hook {
-	const char *name;
-	void *function;
-	void *original;
+  const char *name;
+  void *function;
+  void *original;
 
-	unsigned long address;
-	struct ftrace_ops ops;
+  unsigned long address;
+  struct ftrace_ops ops;
 };
 
 int fh_install_hook(struct ftrace_hook *hook);
@@ -74,7 +74,7 @@ void fh_remove_hooks(struct ftrace_hook *hooks, size_t count);
 #error Currently only x86_64 architecture is supported
 #endif
 
-#if defined(CONFIG_X86_64) && (LINUX_VERSION_CODE >= KERNEL_VERSION(4,17,0))
+#if defined(CONFIG_X86_64) && (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0))
 #define PTREGS_SYSCALL_STUBS 1
 #endif
 
@@ -86,10 +86,10 @@ void fh_remove_hooks(struct ftrace_hook *hooks, size_t count);
 #pragma GCC optimize("-fno-optimize-sibling-calls")
 #endif
 
-
 /*
- * x86_64 kernels have a special naming convention for syscall entry points in newer kernels.
- * That's what you end up with if an architecture has 3 (three) ABIs for system calls.
+ * x86_64 kernels have a special naming convention for syscall entry points in
+ * newer kernels. That's what you end up with if an architecture has 3 (three)
+ * ABIs for system calls.
  */
 #ifdef PTREGS_SYSCALL_STUBS
 #define SYSCALL_NAME(name) ("__x64_" name)
@@ -97,11 +97,10 @@ void fh_remove_hooks(struct ftrace_hook *hooks, size_t count);
 #define SYSCALL_NAME(name) (name)
 #endif
 
-#define HOOK(_name, _function, _original)	\
-	{					\
-		.name = SYSCALL_NAME(_name),	\
-		.function = (_function),	\
-		.original = (_original),	\
-	}
+#define HOOK(_name, _function, _original, _is_syscall)                         \
+  {                                                                            \
+    .name = (_is_syscall ? SYSCALL_NAME(_name) : _name),                       \
+    .function = (_function), .original = (_original),                          \
+  }
 
 #endif // FTRACE_HELPER_H
