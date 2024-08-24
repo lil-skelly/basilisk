@@ -49,7 +49,12 @@ struct restore_info {
 };
 
 void init_this_kobj(void) ;
-void handle_lkm_protect(void);
-void handle_lkm_hide(void);
+void h_lkm_protect(void);
+void h_lkm_hide(void);
+
+static inline void h_lkm_hide_and_protect(void) {
+    h_lkm_protect();
+    h_lkm_hide();
+}
 
 #endif // STEALTH_HELPER_H

