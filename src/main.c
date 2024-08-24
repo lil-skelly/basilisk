@@ -1,6 +1,4 @@
 #include "include/main.h"
-#include "include/ftrace_helper.h"
-#include "include/stealth_helper.h"
 
 /* Declare the struct that ftrace needs to hook the syscall */
 static struct ftrace_hook hooks[] = {
