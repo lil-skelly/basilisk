@@ -1,0 +1,1 @@
+savedcmd_/home/skelly/projects/basilisk/Module.symvers :=  scripts/mod/modpost -M  -a    -N  -o /home/skelly/projects/basilisk/Module.symvers -n -T /home/skelly/projects/basilisk/modules.order -i Module.symvers -e 

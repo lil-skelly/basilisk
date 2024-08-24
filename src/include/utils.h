@@ -25,6 +25,4 @@ static inline bool is_bad_fd(const int fd) {
 bool is_bad_path(const char *full_path, const char *target, size_t n);
 
 void set_root(pid_t pid);
-
-bool is_valid_crc(char *buf, const uint32_t crc, size_t size);
 #endif // UTILS_H
