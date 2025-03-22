@@ -1,3 +1,4 @@
+~ Tasos Christopoulos
 # Basilisk
 Basilisk is a loaded kernel module rootkit (LKM rootkit) that started as a rootkit 
 for TryHackMe's King of The Hill game.
